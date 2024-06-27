@@ -168,7 +168,7 @@ class ConditionalUnet1D(nn.Module):
 #           ...
 #           0 512 1024
 #           1 256 512
-        ##生采样次数为2,序列长度正常恢复只是最上层的跳跃连接每用到
+        ##升采样次数为2,序列长度正常恢复只是最上层的跳跃连接没用到
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
             is_last = ind >= (len(in_out) - 1)
             up_modules.append(nn.ModuleList([

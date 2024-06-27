@@ -117,11 +117,11 @@ class MultiRealsense:
     
     def get(self, k=None, out=None) -> Dict[int, Dict[str, np.ndarray]]:
         """
-        这里0,1,2,3...代表第几个相机，T=T_o,
+        这里0,1,2,3...代表第几个相机，T=K,
         Return order T,H,W,C
         {
             0: {
-                'rgb': (T,H,W,C),
+                'rgb': (T,H,W,C),##这是原代码给的键名，我认为有错误，实际上应该是'color'
                 'timestamp': (T,)
             },
             1: ...

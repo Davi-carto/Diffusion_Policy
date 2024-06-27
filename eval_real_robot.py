@@ -191,7 +191,7 @@ def main(input, output, robot_ip, match_dataset, match_episode,
                 ## reset state for stateful policies
                 ## 大部分policy都没用到，直接pass
                 policy.reset()
-                ##get_real_obs_dict函数对图像或位置数据进行裁剪，图像THWC -> TCHW，个数据与Policy的输入格式匹配
+                ##get_real_obs_dict函数对图像或位置数据进行裁剪，图像THWC -> TCHW，使数据与Policy的输入格式匹配
                 obs_dict_np = get_real_obs_dict(
                     env_obs=obs, shape_meta=cfg.task.shape_meta)
                 ##当调用unsqueeze(0)时，它会在第一个维度（索引为0的维度）上增加一个新的维度。例如，如果原始张量的形状为(T_o, C, H, W)，

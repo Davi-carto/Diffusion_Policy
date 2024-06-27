@@ -321,6 +321,7 @@ class PushTEnv(gym.Env):
         return shape
 
     def add_circle(self, position, radius):
+        # pymunk.Body.KINEMATIC 是 Pymunk 中用来表示刚体类型的枚举值之一，用于创建用户控制并不受外部力影响的刚体对象
         body = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
         body.position = position
         body.friction = 1

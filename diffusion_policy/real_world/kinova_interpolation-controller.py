@@ -6,11 +6,10 @@ from multiprocessing.managers import SharedMemoryManager
 import scipy.interpolate as si
 import scipy.spatial.transform as st
 import numpy as np
-
-##具体于相关机械臂的api,此处为UR机械臂的RTDE
-from rtde_control import RTDEControlInterface
-from rtde_receive import RTDEReceiveInterface
-
+##具体于相关机械臂的api, 此处为kinova机械臂的kortex api
+from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient ##用于control
+from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient##用于reveive
+from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2
 #diffusion_policy中的共享内存管理类
 from diffusion_policy.shared_memory.shared_memory_queue import (
     SharedMemoryQueue, Empty)
@@ -22,38 +21,36 @@ class Command(enum.Enum):
     SERVOL = 1
     SCHEDULE_WAYPOINT = 2
 
-
-class RTDEInterpolationController(mp.Process):
+class KortexInterpolationController(mp.Process):
     """
     To ensure sending command to the robot with predictable latency
-    this controller need its separate process (due to python GIL)
+    this controller needs its separate process (due to python GIL)
     """
-
-
     def __init__(self,
-            shm_manager: SharedMemoryManager,
-            ##UR5机械臂开启所需的信息
-            robot_ip,
+                 shm_manager: SharedMemoryManager,
+                 ##kinova机械臂开启所需的信息
+                 robot_ip,
+                 username,
+                 password,
 
-            frequency=125, 
-            lookahead_time=0.1, 
-            gain=300,
-            max_pos_speed=0.25, # 5% of max speed
-            max_rot_speed=0.16, # 5% of max speed
-            launch_timeout=3,
-            tcp_offset_pose=None,
-
-            payload_mass=None,
-            payload_cog=None,
-            joints_init=None,
-            joints_init_speed=1.05,
-            soft_real_time=False,
-            verbose=False,
-            receive_keys=None,
-            get_max_k=128,
-            ):
+                 frequency=125,
+                 lookahead_time=0.1,
+                 gain=300,
+                 max_pos_speed=0.25, # 5% of max speed
+                 max_rot_speed=0.16, # 5% of max speed
+                 launch_timeout=3,
+                 tcp_offset_pose=None,
+                 payload_mass=None,
+                 payload_cog=None,
+                 joints_init=None,
+                 joints_init_speed=1.05,
+                 soft_real_time=False,
+                 verbose=False,
+                 receive_keys=None,
+                 get_max_k=128,
+                 ):
         """
-        frequency: CB2=125, UR3e=500
+        frequency: update frequency for the controller
         lookahead_time: [0.03, 0.2]s smoothens the trajectory with this lookahead time
         gain: [100, 2000] proportional gain for following target position
         max_pos_speed: m/s
@@ -63,7 +60,6 @@ class RTDEInterpolationController(mp.Process):
         payload_cog: 3d position, center of gravity
         soft_real_time: enables round-robin scheduling and real-time priority
             requires running scripts/rtprio_setup.sh before hand.
-
         """
         # verify
         assert 0 < frequency <= 500
@@ -84,8 +80,10 @@ class RTDEInterpolationController(mp.Process):
             joints_init = np.array(joints_init)
             assert joints_init.shape == (6,)
 
-        super().__init__(name="RTDEPositionalController")
+        super().__init__(name="KortexPositionalController")
         self.robot_ip = robot_ip
+        self.username = username
+        self.password = password
         self.frequency = frequency
         self.lookahead_time = lookahead_time
         self.gain = gain
@@ -101,7 +99,6 @@ class RTDEInterpolationController(mp.Process):
         self.verbose = verbose
 
         # build input queue
-        # 使用queue这种FIFO的结构，可以保证每一条指令都能执行
         example = {
             'cmd': Command.SERVOL.value,
             'target_pose': np.zeros((6,), dtype=np.float64),
@@ -115,7 +112,6 @@ class RTDEInterpolationController(mp.Process):
         )
 
         # build ring buffer
-        #使用ring buffer这种FILO的结构，可以保证buffer中保留着最新的数据，
         if receive_keys is None:
             receive_keys = [
                 'ActualTCPPose',
@@ -128,11 +124,20 @@ class RTDEInterpolationController(mp.Process):
                 'TargetQ',
                 'TargetQd'
             ]
-        rtde_r = RTDEReceiveInterface(hostname=robot_ip)
         example = dict()
-        for key in receive_keys:
-            example[key] = np.array(getattr(rtde_r, 'get'+key)())
-        example['robot_receive_timestamp'] = time.time()
+        # You will need to initialize Kortex API and get the actual state for each receive key
+        # Initialize the Kortex API
+        example = {
+            'ActualTCPPose': np.zeros(6),
+            'ActualTCPSpeed': np.zeros(6),
+            'ActualQ': np.zeros(6),
+            'ActualQd': np.zeros(6),
+            'TargetTCPPose': np.zeros(6),
+            'TargetTCPSpeed': np.zeros(6),
+            'TargetQ': np.zeros(6),
+            'TargetQd': np.zeros(6),
+            'robot_receive_timestamp': time.time()
+        }
         ring_buffer = SharedMemoryRingBuffer.create_from_examples(
             shm_manager=shm_manager,
             examples=example,
@@ -145,14 +150,14 @@ class RTDEInterpolationController(mp.Process):
         self.input_queue = input_queue
         self.ring_buffer = ring_buffer
         self.receive_keys = receive_keys
-    
+
     # ========= launch method ===========
     def start(self, wait=True):
         super().start()
         if wait:
             self.start_wait()
         if self.verbose:
-            print(f"[RTDEPositionalController] Controller process spawned at {self.pid}")
+            print(f"[KortexPositionalController] Controller process spawned at {self.pid}")
 
     def stop(self, wait=True):
         message = {
@@ -165,23 +170,23 @@ class RTDEInterpolationController(mp.Process):
     def start_wait(self):
         self.ready_event.wait(self.launch_timeout)
         assert self.is_alive()
-    
+
     def stop_wait(self):
         self.join()
-    
+
     @property
     def is_ready(self):
         return self.ready_event.is_set()
 
     # ========= context manager ===========
-    # 当使用with语句创建RTDEPositionalController对象时，__enter__方法被调用
+    # When using the `with` statement, the __enter__ method is called
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
-        
+
     # ========= command methods ============
     def servoL(self, pose, duration=0.1):
         """
@@ -198,12 +203,10 @@ class RTDEInterpolationController(mp.Process):
             'duration': duration
         }
         self.input_queue.put(message)
-    
+
     def schedule_waypoint(self, pose, target_time):
         assert target_time > time.time()
         pose = np.array(pose)
-        # if not isinstance(pose, np.ndarray):
-        #     pose = np.array(pose)
         assert pose.shape == (6,)
 
         message = {
@@ -218,11 +221,11 @@ class RTDEInterpolationController(mp.Process):
         if k is None:
             return self.ring_buffer.get(out=out)
         else:
-            return self.ring_buffer.get_last_k(k=k,out=out)
-    
+            return self.ring_buffer.get_last_k(k=k, out=out)
+
     def get_all_state(self):
         return self.ring_buffer.get_all()
-    
+
     # ========= main loop in process ============
     def run(self):
         # enable soft real-time
@@ -230,31 +233,59 @@ class RTDEInterpolationController(mp.Process):
             os.sched_setscheduler(
                 0, os.SCHED_RR, os.sched_param(20))
 
-        # start rtde
-        robot_ip = self.robot_ip
-        rtde_c = RTDEControlInterface(hostname=robot_ip)
-        rtde_r = RTDEReceiveInterface(hostname=robot_ip)
+        # start kortex api
+        from kortex_api.SessionManager import SessionManager
+        from kortex_api.autogen.client_stubs.DeviceManagerClientRpc import DeviceManagerClient
+        from kortex_api.RouterClient import RouterClient
+        from kortex_api.RouterClientSendOptions import RouterClientSendOptions
+        from kortex_api.TCPTransport import TCPTransport
+        from kortex_api.autogen.messages import DeviceConfig_pb2, Common_pb2
+
+        # Setup connection to the robot
+        transport = TCPTransport()
+        router = RouterClient(transport, RouterClientSendOptions())
+        transport.connect(self.robot_ip, 10000)
+        session_info = Common_pb2.CreateSessionInfo()
+        session_info.username = self.username
+        session_info.password = self.password
+        session_manager = SessionManager(router)
+        session_manager.CreateSession(session_info)
+        base = BaseClient(router)
+        base_cyclic = BaseCyclicClient(router)
 
         try:
             if self.verbose:
-                print(f"[RTDEPositionalController] Connect to robot: {robot_ip}")
+                print(f"[KortexPositionalController] Connect to robot: {self.robot_ip}")
 
             # set parameters
             if self.tcp_offset_pose is not None:
-                rtde_c.setTcp(self.tcp_offset_pose)
-            if self.payload_mass is not None:
-                if self.payload_cog is not None:
-                    assert rtde_c.setPayload(self.payload_mass, self.payload_cog)
-                else:
-                    assert rtde_c.setPayload(self.payload_mass)
-            
+                tool_pose = Base_pb2.ToolConfiguration()
+                tool_pose.tool_z = self.tcp_offset_pose[2]
+                tool_pose.tool_y = self.tcp_offset_pose[1]
+                tool_pose.tool_x = self.tcp_offset_pose[0]
+                base.SetToolConfiguration(tool_pose)
+
             # init pose
             if self.joints_init is not None:
-                assert rtde_c.moveJ(self.joints_init, self.joints_init_speed, 1.4)
+                joint_cmd = Base_pb2.Action()
+                joint_cmd.name = "init_position"
+                joint_cmd.application_data = ""
+                joint_waypoint = joint_cmd.reach_joint_angles.joint_angles
+                for i, angle in enumerate(self.joints_init):
+                    joint_waypoint.joint_angles.append(Base_pb2.JointAngle(joint_identifier=i, value=angle))
+                base.ExecuteAction(joint_cmd)
 
             # main loop
             dt = 1. / self.frequency
-            curr_pose = rtde_r.getActualTCPPose()
+            feedback = base_cyclic.RefreshFeedback()
+            curr_pose = [
+                feedback.base.tool_pose_x,
+                feedback.base.tool_pose_y,
+                feedback.base.tool_pose_z,
+                feedback.base.tool_pose_theta_x,
+                feedback.base.tool_pose_theta_y,
+                feedback.base.tool_pose_theta_z,
+            ]
             # use monotonic time to make sure the control loop never go backward
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
@@ -262,32 +293,55 @@ class RTDEInterpolationController(mp.Process):
                 times=[curr_t],
                 poses=[curr_pose]
             )
-            
+
             iter_idx = 0
             keep_running = True
             while keep_running:
                 # start control iteration
-                t_start = rtde_c.initPeriod()
+                t_start = time.time()
 
                 # send command to robot
                 t_now = time.monotonic()
-                # diff = t_now - pose_interp.times[-1]
-                # if diff > 0:
-                #     print('extrapolate', diff)
                 pose_command = pose_interp(t_now)
-                vel = 0.5
-                acc = 0.5
-                assert rtde_c.servoL(pose_command, 
-                    vel, acc, # dummy, not used by ur5
-                    dt, 
-                    self.lookahead_time, 
-                    self.gain)
-                
+
+                servo_cmd = Base_pb2.TwistCommand()
+                servo_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_TOOL
+                servo_cmd.duration = 0
+                servo_cmd.twist.linear_x = pose_command[0]
+                servo_cmd.twist.linear_y = pose_command[1]
+                servo_cmd.twist.linear_z = pose_command[2]
+                servo_cmd.twist.angular_x = pose_command[3]
+                servo_cmd.twist.angular_y = pose_command[4]
+                servo_cmd.twist.angular_z = pose_command[5]
+                base.SendTwistCommand(servo_cmd)
+
                 # update robot state
-                state = dict()
-                for key in self.receive_keys:
-                    state[key] = np.array(getattr(rtde_r, 'get'+key)())
-                state['robot_receive_timestamp'] = time.time()
+                feedback = base_cyclic.RefreshFeedback()
+                state = {
+                    'ActualTCPPose': [
+                        feedback.base.tool_pose_x,
+                        feedback.base.tool_pose_y,
+                        feedback.base.tool_pose_z,
+                        feedback.base.tool_pose_theta_x,
+                        feedback.base.tool_pose_theta_y,
+                        feedback.base.tool_pose_theta_z,
+                    ],
+                    'ActualTCPSpeed': [
+                        feedback.base.tool_twist_linear_x,
+                        feedback.base.tool_twist_linear_y,
+                        feedback.base.tool_twist_linear_z,
+                        feedback.base.tool_twist_angular_x,
+                        feedback.base.tool_twist_angular_y,
+                        feedback.base.tool_twist_angular_z,
+                    ],
+                    'ActualQ': [feedback.actuators[i].position for i in range(6)],
+                    'ActualQd': [feedback.actuators[i].velocity for i in range(6)],
+                    'TargetTCPPose': pose_command,
+                    'TargetTCPSpeed': [0] * 6,  # Not available in Kortex API, use zeros
+                    'TargetQ': [0] * 6,  # Not available in Kortex API, use zeros
+                    'TargetQd': [0] * 6,  # Not available in Kortex API, use zeros
+                    'robot_receive_timestamp': time.time()
+                }
                 self.ring_buffer.put(state)
 
                 # fetch command from queue
@@ -311,7 +365,7 @@ class RTDEInterpolationController(mp.Process):
                     elif cmd == Command.SERVOL.value:
                         # since curr_pose always lag behind curr_target_pose
                         # if we start the next interpolation with curr_pose
-                        # the command robot receive will have discontinouity 
+                        # the command robot receive will have discontinouity
                         # and cause jittery robot behavior.
                         target_pose = command['target_pose']
                         duration = float(command['duration'])
@@ -326,7 +380,7 @@ class RTDEInterpolationController(mp.Process):
                         )
                         last_waypoint_time = t_insert
                         if self.verbose:
-                            print("[RTDEPositionalController] New pose target:{} duration:{}s".format(
+                            print("[KortexPositionalController] New pose target:{} duration:{}s".format(
                                 target_pose, duration))
                     elif cmd == Command.SCHEDULE_WAYPOINT.value:
                         target_pose = command['target_pose']
@@ -348,7 +402,9 @@ class RTDEInterpolationController(mp.Process):
                         break
 
                 # regulate frequency
-                rtde_c.waitPeriod(t_start)
+                elapsed_time = time.time() - t_start
+                sleep_time = max(0, dt - elapsed_time)
+                time.sleep(sleep_time)
 
                 # first loop successful, ready to receive command
                 if iter_idx == 0:
@@ -356,18 +412,15 @@ class RTDEInterpolationController(mp.Process):
                 iter_idx += 1
 
                 if self.verbose:
-                    print(f"[RTDEPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
+                    print(f"[KortexPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
 
         finally:
-            # manditory cleanup
-            # decelerate
-            rtde_c.servoStop()
-
-            # terminate
-            rtde_c.stopScript()
-            rtde_c.disconnect()
-            rtde_r.disconnect()
+            # mandatory cleanup
+            base.Stop()
+            session_manager.CloseSession()
+            router.Close()
+            transport.disconnect()
             self.ready_event.set()
 
             if self.verbose:
-                print(f"[RTDEPositionalController] Disconnected from robot: {robot_ip}")
+                print(f"[KortexPositionalController] Disconnected from robot: {self.robot_ip}")

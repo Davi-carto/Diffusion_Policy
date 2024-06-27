@@ -245,7 +245,6 @@ class RealEnv:
     def get_obs(self) -> dict:
         "observation dict"
         assert self.is_ready
-
         # get data
         # 30 Hz, camera_receive_timestamp
         #math.ceil函数对一个值进行向上取整
@@ -253,10 +252,11 @@ class RealEnv:
         #若相机帧率为30，交互频率为10（每秒10个time_step），则每个相机在一个time_step会新产生3张图片，
         #若设置每次预测时，参考2个time_step（n_obs_steps=2），则要从RingBuffer中获取k=2*3=6张图片，
         k = math.ceil(self.n_obs_steps * (self.video_capture_fps / self.frequency))
+        ##从MultiRealsense类的get方法中获得每个相机各自最新k帧数据，
+        ##MultiRealsense类会为每个相机实例化一个SingleRealsense类，MultiRealsense类的get方法会调用SingleRealsense类的get方法get（）方法会调用SingleRealsense类的get方法，
         self.last_realsense_data = self.realsense.get(
             k=k, 
             out=self.last_realsense_data)
-
         #
         # 125 hz, robot_receive_timestamp
         last_robot_data = self.robot.get_all_state()
@@ -292,7 +292,6 @@ class RealEnv:
             camera_obs[f'camera_{camera_idx}'] = value['color'][this_idxs]
             #camera_obs={camera_0: (T_o,H,W,C),camera_1:（T_o,H,W,C),camera_2:（T_o,H,W,C)}
 
-
         # align robot obs
         ##找到最接近各时间戳对应的索引位置
         robot_timestamps = last_robot_data['robot_receive_timestamp']
@@ -310,13 +309,11 @@ class RealEnv:
         for k, v in last_robot_data.items():
             if k in self.obs_key_map:
                 robot_obs_raw[self.obs_key_map[k]] = v
-        
+        #挑选出与时间戳对应的robot_obs
         robot_obs = dict()
         for k, v in robot_obs_raw.items():
             robot_obs[k] = v[this_idxs]
         #robot_obs={robot_eef_pose: (T_o,6),robot_eef_pose_vel: (T_o,6),robot_joint: (T_o,6),robot_joint_vel: (T_o,6)}
-
-
         # accumulate obsT_o
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
@@ -346,6 +343,7 @@ class RealEnv:
             stages = np.array(stages, dtype=np.int64)
 
         # convert action to pose
+        #只执行时间戳大于当前时间的动作
         receive_time = time.time()
         is_new = timestamps > receive_time
         new_actions = actions[is_new]

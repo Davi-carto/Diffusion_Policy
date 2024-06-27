@@ -136,7 +136,6 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         assert 'past_action' not in obs_dict # not implemented yet
         # normalize input
         nobs = self.normalizer.normalize(obs_dict)
-        ###obs_dict中不同的key如何处理的？
         ##nobs.values(): 获取字典nobs中所有的值。[key1的value，key2的value，...]
         # iter(...): 将获取到的值转换为迭代器。
         # next(...): 获取迭代器的下一个元素，这里是获取第一个值。

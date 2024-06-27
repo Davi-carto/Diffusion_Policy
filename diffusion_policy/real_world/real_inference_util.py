@@ -2,6 +2,7 @@ from typing import Dict, Callable, Tuple
 import numpy as np
 from diffusion_policy.common.cv2_util import get_image_transform
 
+##此文件用于将real_world环境的相机等obs数据转换为模型所需的obs格式
 def get_real_obs_dict(
         env_obs: Dict[str, np.ndarray], 
         shape_meta: dict,

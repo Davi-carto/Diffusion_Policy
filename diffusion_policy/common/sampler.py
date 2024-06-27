@@ -4,6 +4,9 @@ import numba
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 
 
+# @numba.jit(nopython=True):
+# 这是一个装饰器，用于对该函数进行即时编译以提高性能。
+# nopython=True表示希望Numba在不使用Python对象的情况下进行编译，以提高性能。
 @numba.jit(nopython=True)
 def create_indices(
     episode_ends:np.ndarray, sequence_length:int, 
@@ -19,23 +22,33 @@ def create_indices(
     indices = list()
     for i in range(len(episode_ends)):
         if not episode_mask[i]:
+
             # skip episode
             continue
+        ##获取第i个episode的起始和终止索引
         start_idx = 0
+        ##第一个episode的start_idx为0，后续的start_idx为上一个episode的end_idx
         if i > 0:
             start_idx = episode_ends[i-1]
         end_idx = episode_ends[i]
         episode_length = end_idx - start_idx
-        
+
+        ##计算该episode中每个sample的起始和终止索引
+        ##根据T_o和T_a作padding可以把每个episode里的数据都用上
+        ##若T_o=2,T_a=8,则取padding_before=1,padding_after=7
+        ##同时padding可以提高性能   为什么？
         min_start = -pad_before
         max_start = episode_length - sequence_length + pad_after
         
         # range stops one idx before end
         for idx in range(min_start, max_start+1):
+            ##在replay buffer中，每个sample（sequence）的起始和终止索引
             buffer_start_idx = max(idx, 0) + start_idx
             buffer_end_idx = min(idx+sequence_length, episode_length) + start_idx
+            ##较前的几个sample的
             start_offset = buffer_start_idx - (idx+start_idx)
             end_offset = (idx+sequence_length+start_idx) - buffer_end_idx
+            ##sample_start_idx和sample_end_idx标志着每个sample中有效数据的起始和终止索引
             sample_start_idx = 0 + start_offset
             sample_end_idx = sequence_length - end_offset
             if debug:
@@ -45,6 +58,11 @@ def create_indices(
             indices.append([
                 buffer_start_idx, buffer_end_idx, 
                 sample_start_idx, sample_end_idx])
+    ##indices保存着所有episode采样得到的所有sample的索引信息
+    ##保存buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx这四个索引信息是因为，
+    # 我们不会将采样得到的所有sample重新用一块内存来保存，在获取任意一个sample时，依旧是从buffer中读取的
+    # 因此需要保存buffer_start_idx, buffer_end_idx。同时由于某些sample的padding数据不在buffer中，
+    # 因此需要保存sample_start_idx, sample_end_idx。以便在读取这些数据时，将其补充完整
     indices = np.array(indices)
     return indices
 
@@ -144,7 +162,7 @@ class SequenceSampler:
                 except Exception as e:
                     import pdb; pdb.set_trace()
             data = sample
-            ###下面这段代码是为了实现padding么？sample_start_idx，sample_end_idx到底是什么？
+            ###下面这段代码是为了实现padding，padding的内容是每个sample有效数据的第一帧或最后一帧的数据作重复
             if (sample_start_idx > 0) or (sample_end_idx < self.sequence_length):
                 data = np.zeros(
                     shape=(self.sequence_length,) + input_arr.shape[1:],

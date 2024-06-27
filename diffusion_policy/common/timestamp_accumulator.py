@@ -38,6 +38,8 @@ def get_accumulate_timestamp_idxs(
             local_idxs.append(local_idx)
             global_idxs.append(next_global_idx + i)
         next_global_idx += n_repeats
+
+    # local_idxs 记录着每个时间戳在原始列表中对应的索引，global_idxs记录着每个时间戳对应着第k个时间窗
     return local_idxs, global_idxs, next_global_idx
 
 

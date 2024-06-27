@@ -29,18 +29,25 @@ class SingleRealsense(mp.Process):
             self, 
             shm_manager: SharedMemoryManager,
             serial_number,
+            #（width, height）
             resolution=(1280,720),
+            #capture_fps是相机获取图像的频率
+            #put_fps是图像放入ring buffer的频率??
+            #record_fps是视频录制的频率??
             capture_fps=30,
             put_fps=None,
             put_downsample=True,
             record_fps=None,
+
             enable_color=True,
             enable_depth=False,
             enable_infrared=False,
             get_max_k=30,
             advanced_mode_config=None,
+
             transform: Optional[Callable[[Dict], Dict]] = None,
             vis_transform: Optional[Callable[[Dict], Dict]] = None,
+
             recording_transform: Optional[Callable[[Dict], Dict]] = None,
             video_recorder: Optional[VideoRecorder] = None,
             verbose=False
@@ -54,7 +61,7 @@ class SingleRealsense(mp.Process):
 
         # create ring buffer
         resolution = tuple(resolution)
-        shape = resolution[::-1]
+        shape = resolution[::-1]#shape=（height, width）
         examples = dict()
         if enable_color:
             examples['color'] = np.empty(
@@ -109,6 +116,7 @@ class SingleRealsense(mp.Process):
                 mem_mgr=shm_manager,
                 shape=(7,),
                 dtype=np.float64)
+        #intrinsics_array=[fx，fy,ppx,ppy,height,width,scale]
         intrinsics_array.get()[:] = 0
 
         # create video recorder
@@ -158,6 +166,7 @@ class SingleRealsense(mp.Process):
         serials = list()
         for d in rs.context().devices:
             if d.get_info(rs.camera_info.name).lower() != 'platform camera':
+                # camera_info 下的一个具体属性，用于获取摄像头的序列号。序列号是一个唯一的标识符，用于区分不同的摄像头设备
                 serial = d.get_info(rs.camera_info.serial_number)
                 product_line = d.get_info(rs.camera_info.product_line)
                 if product_line == 'D400':
@@ -175,6 +184,7 @@ class SingleRealsense(mp.Process):
         self.stop()
 
     # ========= user API ===========
+    #多线程类的开启和关闭方法
     def start(self, wait=True, put_start_time=None):
         self.put_start_time = put_start_time
         super().start()
@@ -241,10 +251,13 @@ class SingleRealsense(mp.Process):
         assert self.ready_event.is_set()
         fx, fy, ppx, ppy = self.intrinsics_array.get()[:4]
         mat = np.eye(3)
-        mat[0,0] = fx
-        mat[1,1] = fy
-        mat[0,2] = ppx
-        mat[1,2] = ppy
+        mat[0,0] = fx#x轴上的焦距
+        mat[1,1] = fy#y轴上的焦距
+        mat[0,2] = ppx#光轴在x轴上的偏移量
+        mat[1,2] = ppy#光轴在y轴上的偏移量
+        # mat=[[fx,  0,  ppx],
+        #       [ 0, fy,  ppy],
+        #       [ 0,  0,    1]]
         return mat
 
     def get_depth_scale(self):
@@ -276,13 +289,19 @@ class SingleRealsense(mp.Process):
         })
      
     # ========= interval API ===========
+    # 当你创建一个 multiprocessing.Process 的子类时,你必须定义 run 方法。这个方法包含了你希望在新的进程中执行的代码。
+    # 何时被调用: 当你创建并启动一个 multiprocessing.Process 的子类实例时,run 方法就会被自动调用。
+    # 也就是说,当你调用 process_instance.start() 时,run 方法就会被执行。
     def run(self):
         # limit threads
+        # 只会使用1个工作线程来执行任务,无论任务队列中有多少任务。
+        # 如果要执行的任务非常耗费资源(如CPU密集型或I/O密集型),使用单个工作线程可以防止线程竞争,提高整体性能。
         threadpool_limits(1)
         cv2.setNumThreads(1)
 
         w, h = self.resolution
         fps = self.capture_fps
+        #align使深度和rgb图像对齐（分辨率调整到一样）
         align = rs.align(rs.stream.color)
         # Enable the streams from all the intel realsense devices
         rs_config = rs.config()
@@ -315,7 +334,9 @@ class SingleRealsense(mp.Process):
                 advanced_mode = rs.rs400_advanced_mode(device)
                 advanced_mode.load_json(json_text)
 
-            # get
+            # get intrinsics
+            # get_stream 方法从 pipeline_profile 对象中获取特定的数据流配置。这其中 rs.stream.color 表示彩色图像流。
+            # 该方法返回的数据类型是 rs.stream_profile 类型，它包含了图像流的具体信息，如分辨率、帧率、像素格式等
             color_stream = pipeline_profile.get_stream(rs.stream.color)
             intr = color_stream.as_video_stream_profile().get_intrinsics()
             order = ['fx', 'fy', 'ppx', 'ppy', 'height', 'width']
@@ -433,6 +454,7 @@ class SingleRealsense(mp.Process):
                     commands = self.command_queue.get_all()
                     n_cmd = len(commands['cmd'])
                 except Empty:
+                    # print('No command received or.')
                     n_cmd = 0
 
                 # execute commands
