@@ -37,10 +37,13 @@ class PoseTrajectoryInterpolator:
             assert np.all(times[1:] >= times[:-1])
 
             pos = poses[:,:3]
+            #roll pitch yaw -> 旋转矩阵
             rot = st.Rotation.from_rotvec(poses[:,3:])
-
+            # sepy. interpolate.interp1d是SciPy库中执行一维线性插值的函数。
+            # 用于插值一组离散数据点以获得连续函数。
             self.pos_interp = si.interp1d(times, pos, 
                 axis=0, assume_sorted=True)
+            # Slerp是一种在旋转之间进行平滑、自然插值的方法,它保持了旋转之间的恒定角速度
             self.rot_interp = st.Slerp(times, rot)
     
     @property
@@ -48,6 +51,7 @@ class PoseTrajectoryInterpolator:
         if self.single_step:
             return self._times
         else:
+            # si.interp1d中，y = f(x)，故此处x为times，y为poses
             return self.pos_interp.x
     
     @property
@@ -101,7 +105,8 @@ class PoseTrajectoryInterpolator:
         # create new interpolator
         final_interp = PoseTrajectoryInterpolator(times, poses)
         return final_interp
-
+    
+    # 为插值器添加新的路径点，并返回更新后的插值器
     def schedule_waypoint(self,
             pose, time, 
             max_pos_speed=np.inf, 

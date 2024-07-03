@@ -350,7 +350,7 @@ class RealEnv:
         new_timestamps = timestamps[is_new]
         new_stages = stages[is_new]
 
-        # schedule waypoints
+        # schedule waypoints  执行这里即向command_queue中添加了新命令，用来控制机械臂实际运动
         for i in range(len(new_actions)):
             self.robot.schedule_waypoint(
                 pose=new_actions[i],

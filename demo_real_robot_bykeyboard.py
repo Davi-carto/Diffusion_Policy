@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import scipy.spatial.transform as st
 from diffusion_policy.real_world.real_env import RealEnv
-from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
+# from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
@@ -47,7 +47,6 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
         ##Spacemouse类用于读取SpaceMouse数据。
         ####RealEnv类主要负责1.接收处理realsens的数据2.机械臂RTDE的数据（控制和读取）3.管理每个演示数据的开始，结束和丢弃。
         with KeystrokeCounter() as key_counter, \
-            Spacemouse(shm_manager=shm_manager) as sm, \
             RealEnv(
                 output_dir=output,
                 robot_ip=robot_ip,
@@ -133,7 +132,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                         key_counter.clear()
                         is_recording = True
                         print('Recording!')
-                    elif key_stroke == KeyCode(char='s'):
+                    elif key_stroke == KeyCode(char='e'):
                         # Stop recording
                         env.end_episode()
                         key_counter.clear()
@@ -146,7 +145,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                             key_counter.clear()
                             is_recording = False
                         # delete
-                            
+
                 ##stage为一个整数，记录着空格键被按的次数
                 ##每按一次空格键，代表着进入了下一个阶段，因此stage加1
                 stage = key_counter[Key.space]
@@ -173,23 +172,44 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 cv2.pollKey()
                 ##严格控制时间，到t_sample时刻开始读取space mouse数据
                 precise_wait(t_sample)
+
                 # get teleop command
-                sm_state = sm.get_motion_state_transformed()
+                if key_counter[KeyCode(char='d')] >=50: x_vel = 1
+                elif key_counter[KeyCode(char='d')] < 50 and key_counter[KeyCode(char='d')] >= 30: x_vel = 0.6
+                elif key_counter[KeyCode(char='d')] < 30 and key_counter[KeyCode(char='d')] >= 20: x_vel = 0.4
+                elif key_counter[KeyCode(char='d')] < 20 and key_counter[KeyCode(char='d')] >= 10: x_vel = 0.2
+                elif key_counter[KeyCode(char='d')] < 10 and key_counter[KeyCode(char='d')] > 0 : x_vel = 0.1
+                elif key_counter[KeyCode(char='a')] >=50: x_vel = -1
+                elif key_counter[KeyCode(char='a')] < 50 and key_counter[KeyCode(char='a')] >= 30: x_vel = -0.6
+                elif key_counter[KeyCode(char='a')] < 30 and key_counter[KeyCode(char='a')] >= 20: x_vel = -0.4
+                elif key_counter[KeyCode(char='a')] < 20 and key_counter[KeyCode(char='a')] >= 10: x_vel = -0.2
+                elif key_counter[KeyCode(char='a')] < 10 and key_counter[KeyCode(char='a')] > 0 : x_vel = -0.1
+                else: x_vel = 0
+
+                if key_counter[KeyCode(char='w')] >=50: y_vel = 1
+                elif key_counter[KeyCode(char='w')] < 50 and key_counter[KeyCode(char='w')] >= 30: y_vel = 0.6
+                elif key_counter[KeyCode(char='w')] < 30 and key_counter[KeyCode(char='w')] >= 20: y_vel = 0.4
+                elif key_counter[KeyCode(char='w')] < 20 and key_counter[KeyCode(char='w')] >= 10: y_vel = 0.2
+                elif key_counter[KeyCode(char='w')] < 10 and key_counter[KeyCode(char='w')] > 0 : y_vel = 0.1
+                elif key_counter[KeyCode(char='s')] >=50: y_vel = -1
+                elif key_counter[KeyCode(char='s')] < 50 and key_counter[KeyCode(char='s')] >= 30: y_vel = -0.6
+                elif key_counter[KeyCode(char='s')] < 30 and key_counter[KeyCode(char='s')] >= 20: y_vel = -0.4
+                elif key_counter[KeyCode(char='s')] < 20 and key_counter[KeyCode(char='s')] >= 10: y_vel = -0.2
+                elif key_counter[KeyCode(char='s')] < 10 and key_counter[KeyCode(char='s')] > 0  : y_vel = -0.1
+                else: y_vel = 0
+                
+                sm_state = [x_vel, y_vel, 0, 0, 0, 0]
                 # print(sm_state)
+                
                 #sm_state是一个长度为6的数组，分别表示x,y,z,rx,ry,rz，数据大小为（-1,1），为一个比例尺度信息
                 #还需要将sm_state转换为实际的机械臂动作指令，这里的转换方式是将比例尺度信息乘以最大速度，得到实际的动作指令。
                 dpos = sm_state[:3] * (env.max_pos_speed / frequency)
                 drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
-                #Press SpaceMouse right button to unlock z axis.
-                #Press SpaceMouse left button to enable rotation axes.
-                if not sm.is_button_pressed(0):
-                    # translation mode
-                    drot_xyz[:] = 0
-                else:
-                    dpos[:] = 0
-                if not sm.is_button_pressed(1):
-                    # 2D translation mode
-                    dpos[2] = 0
+
+                # 2D translation mode
+                drot_xyz[:] = 0
+                dpos[2] = 0
+
                 # 将欧拉角转换为旋转矩阵
                 drot = st.Rotation.from_euler('xyz', drot_xyz)
                 # 更新目标位姿，格式满足实体机械臂的输入要求
