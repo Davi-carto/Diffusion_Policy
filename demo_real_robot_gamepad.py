@@ -30,6 +30,7 @@ from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
 )
+from diffusion_policy.real_world.gamepad_shared_memory import Gamepad
 
 def pose_transform(origin_pose, frame_transform):
     # 定义旋转和平移
@@ -75,11 +76,12 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
         ##Spacemouse类用于读取SpaceMouse数据。
         ####RealEnv类主要负责1.接收处理realsens的数据2.机械臂RTDE的数据（控制和读取）3.管理每个演示数据的开始，结束和丢弃。
         with KeystrokeCounter() as key_counter, \
+             Gamepad(shm_manager=shm_manager) as gamepad, \
             RealEnv(
                 output_dir=output,
                 robot_ip=robot_ip,
                 # recording resolution
-                obs_image_resolution=(1280,720),
+                obs_image_resolution=(640,480),
                 frequency=frequency,
                 init_joints=init_joints,
                 enable_multi_cam_vis=True,
@@ -92,7 +94,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             ) as env:
             cv2.setNumThreads(1)
             # realsense exposure
-            env.realsense.set_exposure(exposure=120, gain=0)
+            env.realsense.set_exposure(exposure=150, gain=20)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
 
@@ -176,11 +178,11 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                             key_counter.clear()
                             is_recording = False
                         # delete
-                    elif key_stroke == Key.space:
-                        stage += 1
+                    # elif key_stroke == Key.space:
+                    #     stage += 1
                 ##stage为一个整数，记录着空格键被按的次数
                 ##每按一次空格键，代表着进入了下一个阶段，因此stage加1
-                # stage += key_counter[Key.space]
+                stage = key_counter[Key.space]
 
                 # visualize
                 vis_img = obs[f'camera_{vis_camera_idx}'][-1,:,:,::-1].copy()
@@ -206,36 +208,14 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 precise_wait(t_sample)
 
                 # get teleop command
-                if key_counter[KeyCode(char='d')] >=50: x_vel = 1
-                elif key_counter[KeyCode(char='d')] < 50 and key_counter[KeyCode(char='d')] >= 30: x_vel = 0.6
-                elif key_counter[KeyCode(char='d')] < 30 and key_counter[KeyCode(char='d')] >= 20: x_vel = 0.4
-                elif key_counter[KeyCode(char='d')] < 20 and key_counter[KeyCode(char='d')] >= 10: x_vel = 0.2
-                elif key_counter[KeyCode(char='d')] < 10 and key_counter[KeyCode(char='d')] > 0 : x_vel = 0.1
-                elif key_counter[KeyCode(char='a')] >=50: x_vel = -1
-                elif key_counter[KeyCode(char='a')] < 50 and key_counter[KeyCode(char='a')] >= 30: x_vel = -0.6
-                elif key_counter[KeyCode(char='a')] < 30 and key_counter[KeyCode(char='a')] >= 20: x_vel = -0.4
-                elif key_counter[KeyCode(char='a')] < 20 and key_counter[KeyCode(char='a')] >= 10: x_vel = -0.2
-                elif key_counter[KeyCode(char='a')] < 10 and key_counter[KeyCode(char='a')] > 0 : x_vel = -0.1
-                else: x_vel = 0
-
-                if key_counter[KeyCode(char='w')] >=50: y_vel = 1
-                elif key_counter[KeyCode(char='w')] < 50 and key_counter[KeyCode(char='w')] >= 30: y_vel = 0.6
-                elif key_counter[KeyCode(char='w')] < 30 and key_counter[KeyCode(char='w')] >= 20: y_vel = 0.4
-                elif key_counter[KeyCode(char='w')] < 20 and key_counter[KeyCode(char='w')] >= 10: y_vel = 0.2
-                elif key_counter[KeyCode(char='w')] < 10 and key_counter[KeyCode(char='w')] > 0 : y_vel = 0.1
-                elif key_counter[KeyCode(char='s')] >=50: y_vel = -1
-                elif key_counter[KeyCode(char='s')] < 50 and key_counter[KeyCode(char='s')] >= 30: y_vel = -0.6
-                elif key_counter[KeyCode(char='s')] < 30 and key_counter[KeyCode(char='s')] >= 20: y_vel = -0.4
-                elif key_counter[KeyCode(char='s')] < 20 and key_counter[KeyCode(char='s')] >= 10: y_vel = -0.2
-                elif key_counter[KeyCode(char='s')] < 10 and key_counter[KeyCode(char='s')] > 0  : y_vel = -0.1
-                else: y_vel = 0
+                x_vel, y_vel = gamepad.get_axis_state()
                 
                 sm_state = np.array([x_vel, y_vel, 0, 0, 0, 0])
                 # print(sm_state)
                 
                 #sm_state是一个长度为6的数组，分别表示x,y,z,rx,ry,rz，数据大小为（-1,1），为一个比例尺度信息
                 #还需要将sm_state转换为实际的机械臂动作指令，这里的转换方式是将比例尺度信息乘以最大速度，得到实际的动作指令。
-                dpos = sm_state[:3] * (env.max_pos_speed / frequency)
+                dpos = sm_state[:3] *0.6* (env.max_pos_speed / frequency)
                 drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
 
                 origi_dpose = [dpos[0], dpos[1], 0, 0, 0, 0]
@@ -260,7 +240,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                     #按我们的延迟设定，当前时间步的机械臂动作指令应该在下一时间步执行，也就是time_stamps = time.time() + dt
                     timestamps=[t_command_target-time.monotonic()+time.time()],
                     stages=[stage])
-                ##严格控制时间，到t_cycle_end时刻结束此次循环，严格控制循环频率。
+                #严格控制时间，到t_cycle_end时刻结束此次循环，严格控制循环频率。
                 precise_wait(t_cycle_end)
                 iter_idx += 1
 

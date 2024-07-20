@@ -321,7 +321,6 @@ class SingleRealsense(mp.Process):
             # start pipeline
             pipeline = rs.pipeline()
             pipeline_profile = pipeline.start(rs_config)
-
             # report global time
             # https://github.com/IntelRealSense/librealsense/pull/3909
             d = pipeline_profile.get_device().first_color_sensor()

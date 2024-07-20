@@ -30,6 +30,11 @@ from diffusion_policy.model.diffusion.ema_model import EMAModel
 from diffusion_policy.model.common.lr_scheduler import get_scheduler
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
+#register_new_resolver 是 OmegaConf 的一个方法，用于注册新的解析器（resolver）。解析器是一种函数，可以在配置文件中使用，以便在解析配置时执行特定的操作。
+# "eval"：是解析器的名称，自己设置，与配置文件中调用时的名字要一致。
+# eval 是 Python 内置的一个函数，用于将字符串作为 Python 表达式进行求值。例如，eval("1 + 2") 会返回 3
+# 经过如上设置后，在配置文件中，可以使用 "eval" 解析器来执行字符串表达式的求值（相当于设置了一个函数）。例如，如果配置文件中可以写如下内容：
+# my_value: ${eval: "1 + 2"}，  在解析配置时，my_value 会被设置为 3。
 
 class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
