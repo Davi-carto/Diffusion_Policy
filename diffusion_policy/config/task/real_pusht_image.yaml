@@ -6,20 +6,20 @@ dataset_path: data/demo_pusht_real
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
-    # camera_0:
-    #   shape: ${task.image_shape}
-    #   type: rgb
+    camera_0:
+      shape: ${task.image_shape}
+      type: rgb
     #camera_1是本体相机
     camera_1:
       shape: ${task.image_shape}
       type: rgb
-    # camera_2:
+    # # camera_2:
+    # #   shape: ${task.image_shape}
+    # #   type: rgb
+    # # camera_3是靠前方视野的相机
+    # camera_3:
     #   shape: ${task.image_shape}
     #   type: rgb
-    # camera_3是靠前方视野的相机
-    camera_3:
-      shape: ${task.image_shape}
-      type: rgb
     # camera_4:
     #   shape: ${task.image_shape}
     #   type: rgb
