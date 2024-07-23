@@ -18,7 +18,7 @@ class Gamepad(mp.Process):
                 #  max_value=32767,  # Typical max value for gamepad axes
                  deadzone=(0,0,0,0,0,0), 
                  dtype=np.float16,
-                 n_axes=2,
+                 n_axes=5,
                  ):
         """ Continuously listen to gamepad events and update the latest state. """
         super().__init__()
@@ -92,7 +92,6 @@ class Gamepad(mp.Process):
                         for axis_id in range(self.n_axes):
                             axis_value = joystick.get_axis(axis_id)
                             axis_event[axis_id] = axis_value
-                        axis_event[0] = -axis_event[0]
 
                   # invert y-axis for gamepads with left-handed layout
                 axis_event = np.round(axis_event, 2)

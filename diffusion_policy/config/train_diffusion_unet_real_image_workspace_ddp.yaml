@@ -3,7 +3,10 @@ defaults:
   - task: real_pusht_image
 
 name: train_diffusion_unet_image
-_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace_ddp.TrainDiffusionUnetImageWorkspaceDDP
+
+rank: 0
+world_size: 1
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -105,7 +108,7 @@ training:
   device: "cuda:0"
   seed: 42
   debug: False
-  resume: True
+  resume: False
   # optimization
   lr_scheduler: cosine
   lr_warmup_steps: 500

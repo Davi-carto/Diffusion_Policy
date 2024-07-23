@@ -197,10 +197,10 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         }
         return result
 
+
     # ========= training  ============
     def set_normalizer(self, normalizer: LinearNormalizer):
         self.normalizer.load_state_dict(normalizer.state_dict())
-
 
     #用于训练
     def compute_loss(self, batch):

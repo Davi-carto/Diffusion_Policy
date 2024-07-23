@@ -94,7 +94,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             ) as env:
             cv2.setNumThreads(1)
             # realsense exposure
-            env.realsense.set_exposure(exposure=150, gain=20)
+            env.realsense.set_exposure(exposure=130, gain=3)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
 
@@ -208,14 +208,14 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 precise_wait(t_sample)
 
                 # get teleop command
-                x_vel, y_vel = gamepad.get_axis_state()
+                x_vel, y_vel, not_use, lowx_vel, lowy_vel= gamepad.get_axis_state()
                 
-                sm_state = np.array([x_vel, y_vel, 0, 0, 0, 0])
+                sm_state = np.array([-x_vel*0.3-lowx_vel, y_vel*0.3+lowy_vel, 0, 0, 0, 0])
                 # print(sm_state)
                 
                 #sm_state是一个长度为6的数组，分别表示x,y,z,rx,ry,rz，数据大小为（-1,1），为一个比例尺度信息
                 #还需要将sm_state转换为实际的机械臂动作指令，这里的转换方式是将比例尺度信息乘以最大速度，得到实际的动作指令。
-                dpos = sm_state[:3] *0.6* (env.max_pos_speed / frequency)
+                dpos = sm_state[:3] *0.7* (env.max_pos_speed / frequency)
                 drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
 
                 origi_dpose = [dpos[0], dpos[1], 0, 0, 0, 0]

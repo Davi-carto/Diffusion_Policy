@@ -2,6 +2,11 @@ import copy
 import torch
 from torch.nn.modules.batchnorm import _BatchNorm
 
+
+# 这段代码的主要功能是实现模型的指数移动平均（EMA）更新。
+# 具体来说，它通过遍历新模型的模块和参数，根据不同的参数类型（如 BatchNorm 层、不需要梯度的参数和需要梯度的参数），
+# 使用不同的更新策略来更新 EMA 模型的参数。
+# 通过这种方式，EMA 模型能够平滑地跟踪新模型的参数变化，从而在训练过程中提供更稳定的参数估计。
 class EMAModel:
     """
     Exponential Moving Average of models weights
