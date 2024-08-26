@@ -271,10 +271,11 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
             lowdim_shapes[key] = tuple(shape)
             if 'pose' in key:
                 # 这行代码继续执行前提条件检查，确保shape的取值只能是元组(2,)或(6,)
-                assert tuple(shape) in [(2,),(6,)]
+                #新增的检查条件，确保shape的取值只能是元组(2,)或(6,)或(3,)
+                assert tuple(shape) in [(2,),(6,),(3,)]
     
     action_shape = tuple(shape_meta['action']['shape'])
-    assert action_shape in [(2,),(6,)]
+    assert action_shape in [(2,),(6,),(3,)]
 
     # load data
     cv2.setNumThreads(1)
@@ -292,12 +293,20 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
         # 2D action space, only controls X and Y
         zarr_arr = replay_buffer['action']
         zarr_resize_index_last_dim(zarr_arr, idxs=[0,1])
+    elif action_shape == (3,):
+        # 3D action space, only controls X and Y
+        zarr_arr = replay_buffer['action']
+        zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2])
     
     for key, shape in lowdim_shapes.items():
         if 'pose' in key and shape == (2,):
             # only take X and Y
             zarr_arr = replay_buffer[key]
             zarr_resize_index_last_dim(zarr_arr, idxs=[0,1])
+        elif 'pose' in key and shape == (3,):
+            # only take X, Y, and Z
+            zarr_arr = replay_buffer[key]
+            zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2])
 
     return replay_buffer
 

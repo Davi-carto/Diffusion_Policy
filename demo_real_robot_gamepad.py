@@ -221,9 +221,6 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 origi_dpose = [dpos[0], dpos[1], 0, 0, 0, 0]
                 new_dpose = pose_transform(origi_dpose, baes_world_frame_transform)
 
-                # 2D translation mode
-                drot_xyz[:] = 0
-                dpos[2] = 0
 
                 # 将欧拉角转换为旋转矩阵
                 drot = st.Rotation.from_euler('xyz', drot_xyz)

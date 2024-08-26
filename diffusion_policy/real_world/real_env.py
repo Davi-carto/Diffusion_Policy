@@ -78,6 +78,7 @@ class RealEnv:
         if camera_serial_numbers is None:
             camera_serial_numbers = SingleRealsense.get_connected_devices_serial()
 
+        # 用于将相机图像调整为模型需要的输入尺寸
         color_tf = get_image_transform(
             input_res=video_capture_resolution,
             output_res=obs_image_resolution, 
@@ -91,6 +92,8 @@ class RealEnv:
             data['color'] = color_transform(data['color'])
             return data
         
+        # 用于可视化多个相机视角，先获取最佳的行列数和应该调整的分辨率
+        # 再生成一个新的transform用于调整视频图像分辨率
         rw, rh, col, row = optimal_row_cols(
             n_cameras=len(camera_serial_numbers),
             in_wh_ratio=obs_image_resolution[0]/obs_image_resolution[1],
@@ -372,6 +375,7 @@ class RealEnv:
     def get_robot_state(self):
         return self.robot.get_state()
 
+       
     # recording API
     def start_episode(self, start_time=None):
         "Start recording and return first obs"

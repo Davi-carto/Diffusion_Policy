@@ -1,8 +1,8 @@
 name: real_image
-
-image_shape: [3, 240, 320]
+#shape = c,h,w 
+image_shape: [3, 240, 320] 
 # dataset_path: data/pusht_real/real_pusht_20230105
-dataset_path: data/demo_pusht_real
+dataset_path: data/pusht_real
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
@@ -23,12 +23,13 @@ shape_meta: &shape_meta
     # camera_4:
     #   shape: ${task.image_shape}
     #   type: rgb
+
     #ur5正常摆放时，用x和y的位置作为eef_pose就够了，但是实验室ur5的位置特殊，eef_pose就需要加上z轴的位置，姿态不用管，会维持读取到的姿态不变
     robot_eef_pose:
-      shape: [2]
+      shape: [3]
       type: low_dim
   action: 
-    shape: [2]
+    shape: [3]
 
 env_runner:
   _target_: diffusion_policy.env_runner.real_pusht_image_runner.RealPushTImageRunner

@@ -125,11 +125,29 @@ def optimal_row_cols(
         in_wh_ratio,
         max_resolution=(1920, 1080)
     ):
+
+    '''
+    该函数的主要功能是根据给定的摄像头数量和输入图像的宽高比，计算出在最大输出分辨率下，最佳的行数和列数组合，以及相应的最佳宽度和高度。具体步骤如下：
+    解析最大输出分辨率，并计算其宽高比。
+    生成所有可能的行数和列数组合。
+    计算每个组合的宽高比，并找到与最大输出宽高比最接近的组合。
+    根据最佳组合宽高比和最大输出分辨率，计算最佳的宽度和高度。
+    返回最佳的宽度和高度，以及最佳的列数和行数。
+    通过这种方式，该函数能够有效地将多个摄像头图像拼接在一起，同时保持最佳的宽高比和分辨率。 
+    '''
+
+
+    # 解析最大输出分辨率
     out_w, out_h = max_resolution
     out_wh_ratio = out_w / out_h
-    
+    # 生成从1到n_cameras的行数数组。
+    # 根据行数计算列数，并向上取整。    
     n_rows = np.arange(n_cameras,dtype=np.int64) + 1
     n_cols = np.ceil(n_cameras / n_rows).astype(np.int64)
+    # 计算组合宽高比
+    # 计算每个行数和列数组合的宽高比。
+    # 计算组合宽高比与最大输出宽高比的差异。
+    # 找到差异最小的组合，并记录最佳行数、列数和组合宽高比。
     cat_wh_ratio = in_wh_ratio * (n_cols / n_rows)
     ratio_diff = np.abs(out_wh_ratio - cat_wh_ratio)
     best_idx = np.argmin(ratio_diff)
@@ -137,6 +155,10 @@ def optimal_row_cols(
     best_n_col = n_cols[best_idx]
     best_cat_wh_ratio = cat_wh_ratio[best_idx]
 
+    # 计算最佳分辨率
+    # 根据最佳组合宽高比和最大输出分辨率，计算最佳的宽度和高度。
+    # 如果组合宽高比大于或等于最大输出宽高比，则先计算宽度，再根据输入宽高比计算高度。
+    # 否则，先计算高度，再根据输入宽高比计算宽度
     rw, rh = None, None
     if best_cat_wh_ratio >= out_wh_ratio:
         # cat is wider

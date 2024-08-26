@@ -171,6 +171,7 @@ class MultiImageObsEncoder(ModuleAttrMixin):
                 batch_size = data.shape[0]
             else:
                 assert batch_size == data.shape[0]
+            print(f"low_dim input: {key}, data.shape: {data.shape},key_shape_map: {self.key_shape_map[key]}")
             assert data.shape[1:] == self.key_shape_map[key]
             features.append(data)
         

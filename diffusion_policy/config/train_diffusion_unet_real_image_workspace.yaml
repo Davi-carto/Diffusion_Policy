@@ -81,7 +81,7 @@ ema:
 #   persistent_workers: True
 # ddp时配置：
 dataloader:
-  batch_size: 32
+  batch_size: 64
   num_workers: 8
   shuffle: False
   pin_memory: True

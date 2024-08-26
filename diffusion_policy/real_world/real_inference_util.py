@@ -3,36 +3,38 @@ import numpy as np
 from diffusion_policy.common.cv2_util import get_image_transform
 
 ##此文件用于将real_world环境的相机等obs数据转换为模型所需的obs格式
+# env_obs中的图像由（T_o,H_i,W_i,C）的格式转换为（T_o,C,H_o,W_o）的格式，并将图像数据归一化到[0,1]
+# env_obs中的机械臂数据由（T_o,6）的格式裁剪为所需要的（T_o,D）的格式
+
 def get_real_obs_dict(
         env_obs: Dict[str, np.ndarray], 
         shape_meta: dict,
         ) -> Dict[str, np.ndarray]:
     obs_dict_np = dict()
     ''' 
-    shape_meta: &shape_meta
-  # acceptable types: rgb, low_dim
-  obs:
-    # camera_0:
-    #   shape: ${task.image_shape} =[3, 240, 320]
-    #   type: rgb
-    camera_1:
-      shape: ${task.image_shape}=[3, 240, 320]
-      type: rgb
-    # camera_2:
-    #   shape: ${task.image_shape}=[3, 240, 320]
-    #   type: rgb
-    camera_3:
-      shape: ${task.image_shape}=[3, 240, 320]
-      type: rgb
-    # camera_4:
-    #   shape: ${task.image_shape}=[3, 240, 320]
-    #   type: rgb
-    robot_eef_pose:
-      shape: [2]
-      type: low_dim
-  action: 
-    shape: [2]
-    '''
+    shape_meta: 
+        obs:
+            # camera_0:
+            #   shape: ${task.image_shape} =[3, 240, 320]
+            #   type: rgb
+            camera_1:
+            shape: ${task.image_shape}=[3, 240, 320]
+            type: rgb
+            # camera_2:
+            #   shape: ${task.image_shape}=[3, 240, 320]
+            #   type: rgb
+            camera_3:
+            shape: ${task.image_shape}=[3, 240, 320]
+            type: rgb
+            # camera_4:
+            #   shape: ${task.image_shape}=[3, 240, 320]
+            #   type: rgb
+            robot_eef_pose:
+            shape: [2]
+            type: low_dim
+        action: 
+            shape: [2]
+            '''
     obs_shape_meta = shape_meta['obs']
     for key, attr in obs_shape_meta.items():#key为相机名称，attr为数据shape和type的字典
         type = attr.get('type', 'low_dim')
@@ -62,6 +64,10 @@ def get_real_obs_dict(
                 # take X,Y coordinates
                 #this_data_in=（T_o，D=2）
                 this_data_in = this_data_in[...,[0,1]]
+            elif 'pose' in key and shape == (3,):
+                # take X,Y,Z coordinates
+                #this_data_in=（T_o，D=3）
+                this_data_in = this_data_in[...,[0,1,2]]
             obs_dict_np[key] = this_data_in
     return obs_dict_np
 

@@ -60,7 +60,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.mask_generator = LowdimMaskGenerator(
-            action_dim=action_dim,##action_dim=2 或6
+            action_dim=action_dim,##action_dim=2 或6    或3
             obs_dim=0 if obs_as_global_cond else obs_feature_dim,
             max_n_obs_steps=n_obs_steps,
             fix_obs_steps=True,
@@ -105,6 +105,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         #     420, 400, 380, 360, 340, 320, 300, 280, 260, 240, 220, 200, 180, 160,
         #     140, 120, 100,  80,  60,  40,  20,   0])
         scheduler.set_timesteps(self.num_inference_steps)
+        print("num_inference_steps:", self.num_inference_steps)
 
         for t in scheduler.timesteps:
 
@@ -156,6 +157,10 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         global_cond = None
         if self.obs_as_global_cond:
             # condition through global feature
+            # .reshape(-1,*x.shape[2:]) 表示对切片后的数据进行重塑操作。
+            # -1 表示自动计算该维度的大小，以确保总元素数量不变。
+            # *x.shape[2:] 表示保持剩余维度的形状不变。
+            # 重塑后的结果形状为 (B * To, ...)
             this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, Do
@@ -189,6 +194,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         # get action
         start = To - 1
         end = start + self.n_action_steps
+        print("n_action_steps:", self.n_action_steps)
         action = action_pred[:,start:end]
         
         result = {
