@@ -29,6 +29,63 @@ from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
 )
 
+import scipy.spatial.transform as st
+from scipy.spatial.transform import Rotation as R
+
+# right_base2world=[0,0,0,-3.142, -0.785, -0.785]
+right_base2world = [-0.265, 0.265, 0.049,-2.356, 0.000, -2.356]
+
+def transform_velocity_and_update_pose(target_pose, base2world, world_velocity, dt):
+    """
+    将 World 坐标系下的六维速度转换到 Base 坐标系下，并将速度增量附加到目标位姿上。
+
+    Parameters:
+    - target_pose: np.ndarray, shape=(4, 4)
+        Base 坐标系下的目标位姿齐次变换矩阵。
+    - base2world: np.ndarray, shape=(4, 4)
+        Base 到 World 坐标系的齐次变换矩阵（Base 为父坐标系）。
+    - world_velocity: np.ndarray, shape=(6,)
+        World 坐标系下的六维速度 [v_x, v_y, v_z, omega_x, omega_y, omega_z]。
+    - dt: float
+        时间步长。
+
+    Returns:
+    - new_pose: np.ndarray, shape=(4, 4)
+        更新后的 Base 坐标系下的目标位姿齐次变换矩阵。
+    """
+    # 提取旋转矩阵 R_world_to_base
+    R_world_to_base = base2world[:3, :3]  # 从 world 到 base 的旋转部分
+
+    # 转换线速度和角速度到 Base 坐标系
+    linear_velocity_world = world_velocity[:3]
+    angular_velocity_world = world_velocity[3:]
+
+    linear_velocity_base = R_world_to_base @ linear_velocity_world
+    angular_velocity_base = R_world_to_base @ angular_velocity_world
+
+    # 计算位姿增量
+    delta_translation = linear_velocity_base * dt  # 平移增量
+
+    # 使用 Rodrigues 公式计算旋转增量
+    angular_velocity_magnitude = np.linalg.norm(angular_velocity_base)
+    if angular_velocity_magnitude > 1e-6:  # 避免零角速度情况
+        axis = angular_velocity_base / angular_velocity_magnitude
+        delta_rotation = R.from_rotvec(axis * angular_velocity_magnitude * dt)
+    else:
+        delta_rotation = R.identity()
+
+    # 更新目标位姿
+    target_rotation = R.from_matrix(target_pose[:3, :3])
+    new_rotation = delta_rotation * target_rotation  # 旋转增量叠加
+    new_translation = target_pose[:3, 3] + delta_translation  # 平移增量叠加
+
+    # 构造新的齐次变换矩阵
+    new_pose = np.eye(4)
+    new_pose[:3, :3] = new_rotation.as_matrix()
+    new_pose[:3, 3] = new_translation
+
+    return new_pose
+
 @click.command()
 @click.option('--output', '-o', required=True, help="Directory to save demonstration dataset.")
 @click.option('--robot_ip', '-ri', required=True, help="UR5's IP address e.g. 192.168.0.204")
@@ -61,7 +118,8 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 thread_per_video=3,
                 # video recording quality, lower is better (but slower).
                 video_crf=21,
-                shm_manager=shm_manager
+                shm_manager=shm_manager,
+                gripper_binary_mode = True
             ) as env:
             cv2.setNumThreads(1)
             # realsense exposure
@@ -69,7 +127,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
 
-            time.sleep(1.0)
+            time.sleep(3.0)
             print('Ready!')
             ##读取机械臂最新一帧的状态（数据），作为初始状态。
             state = env.get_robot_state()
@@ -86,6 +144,8 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             #     'TargetQd'
             # }'''
             target_pose = state['TargetTCPPose']
+            initial_pose = np.array([-0.43, 0.215, 0.610, 1.92, 0.95, -2.7])#(x,y,z,rx,ry,rz)
+            gripper_closed = 0
             #time.monotonic() 是单调时钟，返回自系统启动后经过的秒数，不受系统时间被改变的影响，适用于需要测量时间间隔的场景。
             t_start = time.monotonic()
             iter_idx = 0
@@ -175,31 +235,53 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 precise_wait(t_sample)
                 # get teleop command
                 sm_state = sm.get_motion_state_transformed()
-                # print(sm_state)
+                # print("sm_state:",sm_state)
                 #sm_state是一个长度为6的数组，分别表示x,y,z,rx,ry,rz，数据大小为（-1,1），为一个比例尺度信息
                 #还需要将sm_state转换为实际的机械臂动作指令，这里的转换方式是将比例尺度信息乘以最大速度，得到实际的动作指令。
-                dpos = sm_state[:3] * (env.max_pos_speed / frequency)
-                drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
-                #Press SpaceMouse right button to unlock z axis.
-                #Press SpaceMouse left button to enable rotation axes.
-                if not sm.is_button_pressed(0):
-                    # translation mode
-                    drot_xyz[:] = 0
+                dpos = sm_state[:3] * (env.max_pos_speed / frequency) * 10
+                drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency) * 5
+                
+                # 每按一次按钮，切换夹爪状态
+                if sm.is_button_pressed(0):
+                    # 等待按钮释放,避免一直按住导致多次切换
+                    while sm.is_button_pressed(0):
+                        time.sleep(0.01)
+                    gripper_closed = 0 if gripper_closed == 1 else 1
+                
+                if sm.is_button_pressed(1):
+                    target_pose = initial_pose.copy()
                 else:
-                    dpos[:] = 0
-                if not sm.is_button_pressed(1):
-                    # 2D translation mode
-                    dpos[2] = 0
-                # 将欧拉角转换为旋转矩阵
-                drot = st.Rotation.from_euler('xyz', drot_xyz)
-                # 更新目标位姿，格式满足实体机械臂的输入要求
-                target_pose[:3] += dpos
-                target_pose[3:] = (drot * st.Rotation.from_rotvec(
-                    target_pose[3:])).as_rotvec()
+                    # Combine linear and angular velocities
+                    world_velocity = np.concatenate([dpos, drot_xyz])
+
+                    # Create base2world transformation matrix
+                    base2world = np.eye(4)
+                    base2world[:3, :3] = R.from_euler('xyz', right_base2world[3:]).as_matrix()
+                    base2world[:3, 3] = right_base2world[:3]
+
+                    # Convert current target_pose to 4x4 matrix if it isn't already
+                    current_pose_matrix = np.eye(4)
+                    current_pose_matrix[:3, :3] = R.from_rotvec(target_pose[3:]).as_matrix()
+                    current_pose_matrix[:3, 3] = target_pose[:3]
+
+                    # Transform velocity and update pose
+                    new_pose_matrix = transform_velocity_and_update_pose(
+                        target_pose=current_pose_matrix,
+                        base2world=base2world,
+                        world_velocity=world_velocity,
+                        dt=1/frequency
+                     )
+
+                    # Convert back to target_pose format [x, y, z, rx, ry, rz]
+                    target_pose[:3] = new_pose_matrix[:3, 3]
+                    target_pose[3:] = R.from_matrix(new_pose_matrix[:3, :3]).as_rotvec()
+
 
                 # execute teleop command
+                # 将target_pose和gripper_closed合并为一个动作
+                action = np.append(target_pose, gripper_closed)
                 env.exec_actions(
-                    actions=[target_pose],
+                    actions=[action,],
                     #t_command_target = t_cycle_end + dt
                     #按我们的延迟设定，当前时间步的机械臂动作指令应该在下一时间步执行，也就是time_stamps = time.time() + dt
                     timestamps=[t_command_target-time.monotonic()+time.time()],

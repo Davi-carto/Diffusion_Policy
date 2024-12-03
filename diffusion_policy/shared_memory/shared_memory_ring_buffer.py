@@ -187,6 +187,7 @@ class SharedMemoryRingBuffer:
         dt = end_time - start_time
         if dt > self.get_time_budget:
             raise TimeoutError(f'Get time out {dt} vs {self.get_time_budget}')
+            # print(f"Warning: Get operation took {dt:.6f} seconds, exceeding budget of {self.get_time_budget:.6f} seconds")
         return out
 
     ##get_last_k方法从共享内存中读取最新k帧的数据

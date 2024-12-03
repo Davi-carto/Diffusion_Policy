@@ -5,7 +5,7 @@ import time
 import shutil
 import math
 from multiprocessing.managers import SharedMemoryManager
-from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
+from diffusion_policy.real_world.rtde_interpolation_controllercccopy import RTDEInterpolationController
 from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
 from diffusion_policy.real_world.video_recorder import VideoRecorder
 from diffusion_policy.common.timestamp_accumulator import (
@@ -27,12 +27,10 @@ DEFAULT_OBS_KEY_MAP = {
     'ActualQd': 'robot_joint_vel',
     # timestamps
     'step_idx': 'step_idx',
-    'timestamp': 'timestamp',
-    'gripper_closed': 'gripper_closed',
-    'gripper_position': 'gripper_position'
+    'timestamp': 'timestamp'
 }
 
-class RealEnv:
+class RealEnvVR:
     def __init__(self, 
             # required params
             output_dir,
@@ -47,10 +45,11 @@ class RealEnv:
             obs_key_map=DEFAULT_OBS_KEY_MAP,
             obs_float32=False,
             # action
-            max_pos_speed=0.07,
-            max_rot_speed=0.6,
+            max_pos_speed=0.05,
+            max_rot_speed=0.3,
             # robot
-            tcp_offset=0.13,
+            # tcp_offset=0.13,
+            tcp_offset=0.1,
             init_joints=False,
             # video capture params
             video_capture_fps=30,
@@ -63,10 +62,8 @@ class RealEnv:
             enable_multi_cam_vis=True,
             multi_cam_vis_resolution=(1280,720),
             # shared memory
-            shm_manager=None,
-            gripper_binary_mode=True,
+            shm_manager=None
             ):
-        self.gripper_binary_mode = gripper_binary_mode
         assert frequency <= video_capture_fps
         output_dir = pathlib.Path(output_dir)
         assert output_dir.parent.is_dir()
@@ -144,7 +141,7 @@ class RealEnv:
             get_max_k=max_obs_buffer_size,
 
             transform=transform,
-            vis_transform=vis_transform,
+            vis_transform=None,
             recording_transform=recording_transfrom,
 
             video_recorder=video_recorder,
@@ -182,8 +179,7 @@ class RealEnv:
             soft_real_time=False,
             verbose=False,
             receive_keys=None,
-            get_max_k=max_obs_buffer_size,
-            gripper_binary_mode=gripper_binary_mode
+            get_max_k=max_obs_buffer_size
             )
         self.realsense = realsense
         self.robot = robot
@@ -352,7 +348,6 @@ class RealEnv:
         elif not isinstance(stages, np.ndarray):
             stages = np.array(stages, dtype=np.int64)
 
-
         # convert action to pose
         #只执行时间戳大于当前时间的动作
         receive_time = time.time()
@@ -364,8 +359,7 @@ class RealEnv:
         # schedule waypoints  执行这里即向command_queue中添加了新命令，用来控制机械臂实际运动
         for i in range(len(new_actions)):
             self.robot.schedule_waypoint(
-                pose=new_actions[i][:-1],
-                gripper_closed=new_actions[i][-1],
+                pose=new_actions[i],
                 target_time=new_timestamps[i]
             )
         

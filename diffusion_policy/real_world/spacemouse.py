@@ -98,11 +98,13 @@ class Spacemouse(Thread):
 
 def test():
     with Spacemouse(deadzone=0.3) as sm:
-        for i in range(2000):
+        for i in range(20000):
             # print(sm.get_motion_state())
             print(sm.get_motion_state_transformed())
-            print(sm.is_button_pressed(0))
+            print("button 0:",sm.is_button_pressed(0))
+            print("button 1:",sm.is_button_pressed(1))
             time.sleep(1/100)
 
 if __name__ == '__main__':
+    
     test()

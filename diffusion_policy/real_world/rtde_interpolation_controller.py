@@ -10,6 +10,7 @@ import numpy as np
 ##具体于相关机械臂的api,此处为UR机械臂的RTDE
 from rtde_control import RTDEControlInterface
 from rtde_receive import RTDEReceiveInterface
+from diffusion_policy.real_world import robotiq_gripper
 
 #diffusion_policy中的共享内存管理类
 from diffusion_policy.shared_memory.shared_memory_queue import (
@@ -28,7 +29,6 @@ class RTDEInterpolationController(mp.Process):
     To ensure sending command to the robot with predictable latency
     this controller need its separate process (due to python GIL)
     """
-
 
     def __init__(self,
             shm_manager: SharedMemoryManager,
@@ -51,6 +51,7 @@ class RTDEInterpolationController(mp.Process):
             verbose=False,
             receive_keys=None,
             get_max_k=128,
+            gripper_binary_mode=True, # 夹爪是否只有开关两种状态的标志
             ):
         """
         frequency: CB2=125, UR3e=500
@@ -99,6 +100,7 @@ class RTDEInterpolationController(mp.Process):
         self.joints_init_speed = joints_init_speed
         self.soft_real_time = soft_real_time
         self.verbose = verbose
+        self.gripper_binary_mode = gripper_binary_mode
 
         # build input queue
         # 使用queue这种FIFO的结构，可以保证每一条指令都能执行
@@ -106,7 +108,9 @@ class RTDEInterpolationController(mp.Process):
             'cmd': Command.SERVOL.value,
             'target_pose': np.zeros((6,), dtype=np.float64),
             'duration': 0.0,
-            'target_time': 0.0
+            'target_time': 0.0,
+            'gripper_position': 0,
+            'gripper_closed': 0
         }
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
@@ -133,11 +137,13 @@ class RTDEInterpolationController(mp.Process):
         for key in receive_keys:
             example[key] = np.array(getattr(rtde_r, 'get'+key)())
         example['robot_receive_timestamp'] = time.time()
+        example['gripper_position'] = 0 #(0-255)
+        example['gripper_closed'] = 0   #1:close, 0:open
 
         ''' 
         机械臂的ring_buffer中每一条数据为一个dict，格式如下：
         {
-            'ActualTCPPose',
+            'ActualTCPPose',Actual Cartesian coordinates of the tool: (x,y,z,rx,ry,rz), where rx, ry and rz is a rotation vector representation of the tool orientation
             'ActualTCPSpeed',
             'ActualQ',
             'ActualQd',
@@ -147,7 +153,9 @@ class RTDEInterpolationController(mp.Process):
             'TargetQ',
             'TargetQd'
 
-            robot_receive_timestamp
+            'robot_receive_timestamp',
+            'gripper_position',
+            'gripper_closed'
         }
         
         '''
@@ -217,19 +225,24 @@ class RTDEInterpolationController(mp.Process):
         }
         self.input_queue.put(message)
     
-    def schedule_waypoint(self, pose, target_time):
+    def schedule_waypoint(self, pose, gripper_closed, target_time,gripper_position=0):
         assert target_time > time.time()
         pose = np.array(pose)
         # if not isinstance(pose, np.ndarray):
         #     pose = np.array(pose)
         assert pose.shape == (6,)
+        assert gripper_position in [0, 255]
 
         message = {
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
-            'target_time': target_time
+            'target_time': target_time,
+            'gripper_position': gripper_position,
+            'gripper_closed': gripper_closed
         }
         self.input_queue.put(message)
+
+
 
     # ========= receive APIs =============
     def get_state(self, k=None, out=None):
@@ -252,6 +265,11 @@ class RTDEInterpolationController(mp.Process):
         robot_ip = self.robot_ip
         rtde_c = RTDEControlInterface(hostname=robot_ip)
         rtde_r = RTDEReceiveInterface(hostname=robot_ip)
+        gripper = robotiq_gripper.RobotiqGripper()
+        gripper.connect(robot_ip, 63352)
+        gripper.activate()
+
+        # gripper.move_and_wait_for_pos(0, 255, 255)
 
         try:
             if self.verbose:
@@ -280,6 +298,8 @@ class RTDEInterpolationController(mp.Process):
                 times=[curr_t],
                 poses=[curr_pose]
             )
+            gripper_position = 0
+            gripper_closed = 0
             
             iter_idx = 0
             keep_running = True
@@ -295,19 +315,37 @@ class RTDEInterpolationController(mp.Process):
                 # if diff > 0:
                 #     print('extrapolate', diff)
                 pose_command = pose_interp(t_now)
-                vel = 0.5
-                acc = 0.5
+                vel = 0.25
+                acc = 1.0
                 assert rtde_c.servoL(pose_command, 
                     vel, acc, # dummy, not used by ur5
                     dt, 
                     self.lookahead_time, 
                     self.gain)
+                # assert rtde_c.servoL(pose_command, 
+                # vel, acc, # dummy, not used by ur5
+                # blend = 0.0)
+                
+                if self.gripper_binary_mode:
+                    if gripper_closed == 1:
+                        gripper.move_and_wait_for_pos(255, 255, 10)
+                    else:
+                        gripper.move_and_wait_for_pos(0, 255, 10)
+                else:
+                    gripper.move_and_wait_for_pos(gripper_position, 255, 10)
                 
                 # update robot state
                 state = dict()
                 for key in self.receive_keys:
                     state[key] = np.array(getattr(rtde_r, 'get'+key)())
                 state['robot_receive_timestamp'] = time.time()
+                state['gripper_position'] = gripper.get_current_position()
+
+                if gripper.get_current_position() > 50:
+                    state['gripper_closed'] = 1
+                else:
+                    state['gripper_closed'] = 0
+
                 self.ring_buffer.put(state)
 
                 # fetch command from queue
@@ -364,6 +402,9 @@ class RTDEInterpolationController(mp.Process):
                             last_waypoint_time=last_waypoint_time
                         )
                         last_waypoint_time = target_time
+                        # 更新夹爪位置和状态
+                        gripper_position = command['gripper_position']
+                        gripper_closed = command['gripper_closed']
                     else:
                         keep_running = False
                         break
@@ -393,6 +434,7 @@ class RTDEInterpolationController(mp.Process):
             rtde_c.stopScript()
             rtde_c.disconnect()
             rtde_r.disconnect()
+            gripper.disconnect()
             self.ready_event.set()
 
             if self.verbose:

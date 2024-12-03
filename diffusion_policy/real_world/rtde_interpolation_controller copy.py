@@ -10,6 +10,7 @@ import numpy as np
 ##具体于相关机械臂的api,此处为UR机械臂的RTDE
 from rtde_control import RTDEControlInterface
 from rtde_receive import RTDEReceiveInterface
+import robotiq_gripper
 
 #diffusion_policy中的共享内存管理类
 from diffusion_policy.shared_memory.shared_memory_queue import (
@@ -28,7 +29,6 @@ class RTDEInterpolationController(mp.Process):
     To ensure sending command to the robot with predictable latency
     this controller need its separate process (due to python GIL)
     """
-
 
     def __init__(self,
             shm_manager: SharedMemoryManager,
@@ -137,7 +137,7 @@ class RTDEInterpolationController(mp.Process):
         ''' 
         机械臂的ring_buffer中每一条数据为一个dict，格式如下：
         {
-            'ActualTCPPose',
+            'ActualTCPPose',Actual Cartesian coordinates of the tool: (x,y,z,rx,ry,rz), where rx, ry and rz is a rotation vector representation of the tool orientation
             'ActualTCPSpeed',
             'ActualQ',
             'ActualQd',
@@ -295,13 +295,16 @@ class RTDEInterpolationController(mp.Process):
                 # if diff > 0:
                 #     print('extrapolate', diff)
                 pose_command = pose_interp(t_now)
-                vel = 0.5
-                acc = 0.5
+                vel = 0.25
+                acc = 1.0
                 assert rtde_c.servoL(pose_command, 
                     vel, acc, # dummy, not used by ur5
                     dt, 
                     self.lookahead_time, 
                     self.gain)
+                # assert rtde_c.servoL(pose_command, 
+                # vel, acc, # dummy, not used by ur5
+                # blend = 0.0)
                 
                 # update robot state
                 state = dict()

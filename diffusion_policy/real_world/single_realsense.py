@@ -47,8 +47,8 @@ class SingleRealsense(mp.Process):
 
             transform: Optional[Callable[[Dict], Dict]] = None,
             vis_transform: Optional[Callable[[Dict], Dict]] = None,
-
             recording_transform: Optional[Callable[[Dict], Dict]] = None,
+            
             video_recorder: Optional[VideoRecorder] = None,
             verbose=False
         ):

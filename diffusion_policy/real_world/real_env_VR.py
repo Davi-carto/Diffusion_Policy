@@ -5,7 +5,7 @@ import time
 import shutil
 import math
 from multiprocessing.managers import SharedMemoryManager
-from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
+from diffusion_policy.real_world.rtde_interpolation_controllercccopy import RTDEInterpolationController
 from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
 from diffusion_policy.real_world.video_recorder import VideoRecorder
 from diffusion_policy.common.timestamp_accumulator import (
@@ -27,16 +27,14 @@ DEFAULT_OBS_KEY_MAP = {
     'ActualQd': 'robot_joint_vel',
     # timestamps
     'step_idx': 'step_idx',
-    'timestamp': 'timestamp',
-    'gripper_closed': 'gripper_closed',
-    'gripper_position': 'gripper_position'
+    'timestamp': 'timestamp'
 }
 
-class RealEnv:
+class RealEnvVR:
     def __init__(self, 
-            # required params
             output_dir,
-            robot_ip,
+            robot_ips,
+            robot_num = 2,
             # env params
             frequency=10,
             n_obs_steps=2,
@@ -46,11 +44,13 @@ class RealEnv:
             camera_serial_numbers=None,
             obs_key_map=DEFAULT_OBS_KEY_MAP,
             obs_float32=False,
+
             # action
-            max_pos_speed=0.07,
-            max_rot_speed=0.6,
+            max_pos_speed=0.05,
+            max_rot_speed=0.3,
             # robot
-            tcp_offset=0.13,
+            # tcp_offset=0.13,
+            tcp_offset=0.1,
             init_joints=False,
             # video capture params
             video_capture_fps=30,
@@ -63,10 +63,8 @@ class RealEnv:
             enable_multi_cam_vis=True,
             multi_cam_vis_resolution=(1280,720),
             # shared memory
-            shm_manager=None,
-            gripper_binary_mode=True,
+            shm_manager=None
             ):
-        self.gripper_binary_mode = gripper_binary_mode
         assert frequency <= video_capture_fps
         output_dir = pathlib.Path(output_dir)
         assert output_dir.parent.is_dir()
@@ -144,7 +142,7 @@ class RealEnv:
             get_max_k=max_obs_buffer_size,
 
             transform=transform,
-            vis_transform=vis_transform,
+            vis_transform=None,
             recording_transform=recording_transfrom,
 
             video_recorder=video_recorder,
@@ -164,29 +162,31 @@ class RealEnv:
         j_init = np.array([0,-90,-90,-90,90,0]) / 180 * np.pi
         if not init_joints:
             j_init = None
-
-        robot = RTDEInterpolationController(
-            shm_manager=shm_manager,
-            robot_ip=robot_ip,
-            frequency=125, # UR5 CB3 RTDE
-            lookahead_time=0.1,
-            gain=300,
-            max_pos_speed=max_pos_speed*cube_diag,
-            max_rot_speed=max_rot_speed*cube_diag,
-            launch_timeout=3,
-            tcp_offset_pose=[0,0,tcp_offset,0,0,0],
-            payload_mass=None,
-            payload_cog=None,
-            joints_init=j_init,
-            joints_init_speed=1.05,
-            soft_real_time=False,
-            verbose=False,
-            receive_keys=None,
-            get_max_k=max_obs_buffer_size,
-            gripper_binary_mode=gripper_binary_mode
-            )
+        
+        robots = []
+        for i in range(robot_num):
+            robot = RTDEInterpolationController(
+                shm_manager=shm_manager,
+                robot_ip=robot_ips[i],
+                frequency=125, # UR5 CB3 RTDE 
+                lookahead_time=0.1,
+                gain=300,
+                max_pos_speed=max_pos_speed*cube_diag,
+                max_rot_speed=max_rot_speed*cube_diag,
+                launch_timeout=3,
+                tcp_offset_pose=[0,0,tcp_offset,0,0,0],
+                payload_mass=None,
+                payload_cog=None,
+                joints_init=j_init,
+                joints_init_speed=1.05,
+                soft_real_time=False,
+                verbose=False,
+                receive_keys=None,
+                get_max_k=max_obs_buffer_size
+                )
+            robots.append(robot)
         self.realsense = realsense
-        self.robot = robot
+        self.robots = robots
         self.multi_cam_vis = multi_cam_vis
         self.video_capture_fps = video_capture_fps
         self.frequency = frequency
@@ -211,12 +211,13 @@ class RealEnv:
     # ======== start-stop API =============
     @property
     def is_ready(self):
-        return self.realsense.is_ready and self.robot.is_ready
+        return self.realsense.is_ready and all([robot.is_ready for robot in self.robots])
 
     ##start和start_wait的区别？
     def start(self, wait=True):
         self.realsense.start(wait=False)
-        self.robot.start(wait=False)
+        for robot in self.robots:
+            robot.start(wait=False)
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start(wait=False)
         if wait:
@@ -226,19 +227,22 @@ class RealEnv:
         self.end_episode()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop(wait=False)
-        self.robot.stop(wait=False)
+        for robot in self.robots:
+            robot.stop(wait=False)
         self.realsense.stop(wait=False)
         if wait:
             self.stop_wait()
 
     def start_wait(self):
         self.realsense.start_wait()
-        self.robot.start_wait()
+        for robot in self.robots:
+            robot.start_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start_wait()
     
     def stop_wait(self):
-        self.robot.stop_wait()
+        for robot in self.robots:
+            robot.stop_wait()
         self.realsense.stop_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop_wait()
@@ -269,7 +273,7 @@ class RealEnv:
             out=self.last_realsense_data)
         #
         # 125 hz, robot_receive_timestamp
-        last_robot_data = self.robot.get_all_state()
+        last_robot_data = self.robots[0].get_all_state()
         # both have more than n_obs_steps data
 
         # align camera obs timestamps
@@ -343,8 +347,10 @@ class RealEnv:
             timestamps: np.ndarray, 
             stages: Optional[np.ndarray]=None):
         assert self.is_ready
-        if not isinstance(actions, np.ndarray):
-            actions = np.array(actions)
+        if not isinstance(actions[0], np.ndarray):
+            actions[0] = np.array(actions[0])
+        if not isinstance(actions[1], np.ndarray):
+            actions[1] = np.array(actions[1])
         if not isinstance(timestamps, np.ndarray):
             timestamps = np.array(timestamps)
         if stages is None:
@@ -352,37 +358,50 @@ class RealEnv:
         elif not isinstance(stages, np.ndarray):
             stages = np.array(stages, dtype=np.int64)
 
-
         # convert action to pose
         #只执行时间戳大于当前时间的动作
         receive_time = time.time()
         is_new = timestamps > receive_time
-        new_actions = actions[is_new]
+        print(f"is_new: {is_new}")
+        
+        # 确保动作和时间戳的形状兼容
+        if len(actions[0].shape) == 1:
+            # 如果动作是单个位姿，将其重塑为 (1, n) 的形状
+            new_actions_0 = actions[0].reshape(1, -1)
+            new_actions_1 = actions[1].reshape(1, -1)
+        else:
+            # 如果动作是位姿序列，通过时间戳进行过滤
+            new_actions_0 = actions[0][is_new]
+            new_actions_1 = actions[1][is_new]
+            
         new_timestamps = timestamps[is_new]
         new_stages = stages[is_new]
-
+        
         # schedule waypoints  执行这里即向command_queue中添加了新命令，用来控制机械臂实际运动
-        for i in range(len(new_actions)):
-            self.robot.schedule_waypoint(
-                pose=new_actions[i][:-1],
-                gripper_closed=new_actions[i][-1],
+        for i in range(len(new_actions_0)):
+            self.robots[0].schedule_waypoint(
+                pose=new_actions_0[i],
+                target_time=new_timestamps[i]
+            )
+            self.robots[1].schedule_waypoint(
+                pose=new_actions_1[i], 
                 target_time=new_timestamps[i]
             )
         
-        # record actions
-        if self.action_accumulator is not None:
-            self.action_accumulator.put(
-                new_actions,
-                new_timestamps
-            )
-        if self.stage_accumulator is not None:
-            self.stage_accumulator.put(
-                new_stages,
-                new_timestamps
-            )
-    
+        # # record actions
+        # if self.action_accumulator is not None:
+        #     self.action_accumulator.put(
+        #         new_actions_0,
+        #         new_timestamps
+        #     )
+        # if self.stage_accumulator is not None:
+        #     self.stage_accumulator.put(
+        #         new_stages,
+        #         new_timestamps
+        #     )
+
     def get_robot_state(self):
-        return self.robot.get_state()
+        return self.robots[0].get_state()
 
        
     # recording API
@@ -466,7 +485,7 @@ class RealEnv:
         episode_id = self.replay_buffer.n_episodes
         this_video_dir = self.video_dir.joinpath(str(episode_id))
         if this_video_dir.exists():
-            # shutil.rmtree函数的作用是删除目录树，即连同目录下的所有文件和子目录都会被一并删除
+            # shutil.rmtree函数的作用是删除目录树，即连同目录��的所有文件和子目录都会被一并删除
             shutil.rmtree(str(this_video_dir))
         print(f'Episode {episode_id} dropped!')
 

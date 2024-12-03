@@ -10,9 +10,9 @@ class Spacemouse(mp.Process):
             get_max_k=30, 
             frequency=200,
             max_value=500, 
-            deadzone=(0,0,0,0,0,0), 
+            deadzone=(0.2,0.2,0.2,0.2,0.2,0.2), 
             dtype=np.float32,
-            n_buttons=2,
+            n_buttons=20,
             ):
         """
         Continuously listen to 3D connection space naviagtor events
