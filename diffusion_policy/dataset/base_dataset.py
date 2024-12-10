@@ -29,7 +29,7 @@ class BaseLowdimDataset(torch.utils.data.Dataset):
 
 class BaseImageDataset(torch.utils.data.Dataset):
     # def get_validation_dataset(self) -> 'BaseLowdimDataset':
-    ##上面是原来的，->指定的类型为什么是BaseLowdimDataset，而不是BaseImageDataset？
+    ##上面是原来的，->指定的类型为什么是BaseLowdimDataset，而不是BaseImageDataset？ 类型提示并不会影响代码的运行
     ##是写错了？return BaseImageDataset()和->'BaseImageDataset'谁的优先级更高？
     def get_validation_dataset(self) -> 'BaseImageDataset':
         # return an empty dataset by default

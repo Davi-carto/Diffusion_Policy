@@ -143,6 +143,7 @@ class ReplayBuffer:
     def create_from_group(cls, group, **kwargs):
         if 'data' not in group:
             # create from stratch
+            # cls指向ReplayBuffer类，cls.create_empty_zarr()是类方法
             buffer = cls.create_empty_zarr(root=group, **kwargs)
         else:
             # already exist
@@ -407,6 +408,7 @@ class ReplayBuffer:
         return _get_episode_idxs(self.episode_ends)
         
     
+    # 用于返回当前数据存储的类型
     @property
     def backend(self):
         backend = 'numpy'
@@ -468,7 +470,7 @@ class ReplayBuffer:
             compressors: Union[str, numcodecs.abc.Codec, dict]=dict()):
         assert(len(data) > 0)
         is_zarr = (self.backend == 'zarr')
-
+        # 当前数据总长度
         curr_len = self.n_steps
         episode_length = None
         for key, value in data.items():
@@ -509,6 +511,7 @@ class ReplayBuffer:
             arr[-value.shape[0]:] = value
         
         # append to episode ends
+        # 将新的 episode 的长度添加到 episode_ends 数组中（如：episode_ends = [0, 10, 20, 30]，new_len = 40，则episode_ends = [0, 10, 20, 30, 40]）
         episode_ends = self.episode_ends
         if is_zarr:
             episode_ends.resize(episode_ends.shape[0] + 1)
