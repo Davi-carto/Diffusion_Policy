@@ -322,7 +322,8 @@ class RealEnv:
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
                 robot_obs_raw,
-                robot_timestamps
+                robot_timestamps,
+                camera_obs # TODO：直接加 camera_obs 试试
             )
 
         # return obs
