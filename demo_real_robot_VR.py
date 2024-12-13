@@ -108,27 +108,36 @@ def pose_transform_inv(origin_pose, frame_transform=left_base2world):
 def ur_controller(teleop_state,right_base2world=right_base2world,left_base2world=left_base2world):
     '''
     teleop_state = {
-        'head_rmat': head_rmat.astype(np.float32),
-        'left_pose': left_pose.astype(np.float32),
-        'right_pose': right_pose.astype(np.float32),
-        # 'left_qpos': left_qpos.astype(np.float32),
-        # 'right_qpos': right_qpos.astype(np.float32),
-        'receive_timestamp': time.time()
-      }
+            'head_rmat': np.eye(3, dtype=np.float32),
+            'left_pose': np.zeros(7, dtype=np.float32),
+            'right_pose': np.zeros(7, dtype=np.float32),
+            'left_gripper_position': np.zeros(1, dtype=np.float32),
+            'right_gripper_position': np.zeros(1, dtype=np.float32),
+            'receive_timestamp': time.time()
+        }
     '''
-    
-    # Convert right_pose from [x,y,z,qx,qy,qz,qw] to [x,y,z,roll,pitch,yaw]
+
     right_pose = teleop_state['right_pose']
     # print("right_pose:",right_pose)
     target_right_pose = pose_transform(right_pose,right_base2world)
 
-    # Convert left_pose from [x,y,z,qx,qy,qz,qw] to [x,y,z,roll,pitch,yaw]
     left_pose = teleop_state['left_pose']
-    print("left_pose:",left_pose)
+    # print("left_pose:",left_pose)
     target_left_pose = pose_transform(left_pose,left_base2world)
-    print("target_left_pose:",target_left_pose)
+    # print("target_left_pose:",target_left_pose)
 
-    return target_right_pose, target_left_pose
+    left_gripper_position = teleop_state['left_gripper_position']
+    right_gripper_position = teleop_state['right_gripper_position']
+    # 将gripper_position归一化到0-1之间
+    gripper_length = 0.13  # 夹爪最大张开长度为0.13m
+    left_gripper_position = np.clip(left_gripper_position / gripper_length, 0, 1)
+    right_gripper_position = np.clip(right_gripper_position / gripper_length, 0, 1)
+
+    # 根据夹爪开度判断夹爪状态
+    left_gripper_closed = 1 if left_gripper_position < 0.4 else 0
+    right_gripper_closed = 1 if right_gripper_position < 0.4 else 0
+
+    return target_right_pose, target_left_pose, right_gripper_closed, left_gripper_closed
 
 @click.command()
 @click.option('--output', '-o', required=True, help="Directory to save demonstration dataset.")
@@ -139,7 +148,7 @@ def ur_controller(teleop_state,right_base2world=right_base2world,left_base2world
     help="UR5's IP addresses e.g. 192.168.0.204. Provide one IP for each robot.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--init_joints', '-j', is_flag=True, default=False, help="Whether to initialize robot joint configuration in the beginning.")
-@click.option('--frequency', '-f', default=30, type=float, help="Control frequency in Hz.")
+@click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
 def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, command_latency):
     ##通过循环频率和设置每个时间步（time_step）的时长
@@ -172,7 +181,7 @@ def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, c
             
             cv2.setNumThreads(1)
             # realsense exposure
-            env.realsense.set_exposure(exposure=550, gain=25)
+            env.realsense.set_exposure(exposure=130, gain=0)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
 
@@ -193,8 +202,8 @@ def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, c
             #     'TargetQd'
             # }'''
             target_pose = state['TargetTCPPose']
-            actual_pose = state['ActualTCPPose']
-            print("actual_pose:",actual_pose)
+            # actual_pose = state['ActualTCPPose']
+            # print("actual_pose:",actual_pose)
             # print("target_pose",target_pose)
             #time.monotonic() 是单调时钟，返回自系统启动后经过的秒数，不受系统时间被改变的影响，适用于需要测量时间间隔的场景。
             t_start = time.monotonic()
@@ -293,10 +302,17 @@ def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, c
                 # print("target_right_pose:",target_right_pose)
 
                 teleop_state = vuer_teleop.get_vr_state()
-                target_right_pose, target_left_pose = ur_controller(teleop_state)
+                target_right_pose, target_left_pose, right_gripper_closed, left_gripper_closed = ur_controller(teleop_state)
+                # 将两个机械臂的控制指令组合成一个action
+                action = np.concatenate([
+                    target_right_pose.reshape(-1)[:6],  # 右臂位姿 (6维)
+                    [right_gripper_closed],             # 右臂夹爪状态 (1维)
+                    target_left_pose.reshape(-1)[:6],   # 左臂位姿 (6维)
+                    [left_gripper_closed]               # 左臂夹爪状态 (1维)
+                ])
                 # execute teleop command
                 env.exec_actions(
-                    actions=[target_right_pose, target_left_pose],
+                    actions=[action],
                     #t_command_target = t_cycle_end + dt
                     #按我们的延迟设定，当前时间步的机械臂动作指令应该在下一时间步执行，也就是time_stamps = time.time() + dt
                     timestamps=[t_command_target-time.monotonic()+time.time()],

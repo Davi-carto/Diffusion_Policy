@@ -90,8 +90,8 @@ class VuerPreprocessor:
         rel_right_fingers = fast_mat_inv(right_hand_mat) @ right_fingers
         #hand2inspire 是手坐标系到inspire坐标系的转换矩阵，其转置为inspire坐标系到手坐标系的转换矩阵
         # 计算手指关键点在inspire坐标系下的位置，转置后最终得到的矩阵为（N，3）
-        rel_left_fingers = (hand2inspire.T @ rel_left_fingers)[0:3, :].T
-        rel_right_fingers = (hand2inspire.T @ rel_right_fingers)[0:3, :].T
+        rel_left_fingers =  rel_left_fingers[0:3, :].T
+        rel_right_fingers = rel_right_fingers[0:3, :].T
         #head在world坐标系下的位置，wrist
         return head_mat, rel_left_hand_mat, rel_right_hand_mat, rel_left_fingers, rel_right_fingers
 

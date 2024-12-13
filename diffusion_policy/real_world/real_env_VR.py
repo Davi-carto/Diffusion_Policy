@@ -5,7 +5,7 @@ import time
 import shutil
 import math
 from multiprocessing.managers import SharedMemoryManager
-from diffusion_policy.real_world.rtde_interpolation_controllercccopy import RTDEInterpolationController
+from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
 from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
 from diffusion_policy.real_world.video_recorder import VideoRecorder
 from diffusion_policy.common.timestamp_accumulator import (
@@ -347,10 +347,8 @@ class RealEnvVR:
             timestamps: np.ndarray, 
             stages: Optional[np.ndarray]=None):
         assert self.is_ready
-        if not isinstance(actions[0], np.ndarray):
-            actions[0] = np.array(actions[0])
-        if not isinstance(actions[1], np.ndarray):
-            actions[1] = np.array(actions[1])
+        if not isinstance(actions, np.ndarray):
+            actions = np.array(actions)
         if not isinstance(timestamps, np.ndarray):
             timestamps = np.array(timestamps)
         if stages is None:
@@ -358,33 +356,25 @@ class RealEnvVR:
         elif not isinstance(stages, np.ndarray):
             stages = np.array(stages, dtype=np.int64)
 
+
         # convert action to pose
         #只执行时间戳大于当前时间的动作
         receive_time = time.time()
         is_new = timestamps > receive_time
-        print(f"is_new: {is_new}")
-        
-        # 确保动作和时间戳的形状兼容
-        if len(actions[0].shape) == 1:
-            # 如果动作是单个位姿，将其重塑为 (1, n) 的形状
-            new_actions_0 = actions[0].reshape(1, -1)
-            new_actions_1 = actions[1].reshape(1, -1)
-        else:
-            # 如果动作是位姿序列，通过时间戳进行过滤
-            new_actions_0 = actions[0][is_new]
-            new_actions_1 = actions[1][is_new]
-            
+        new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
         new_stages = stages[is_new]
-        
+
         # schedule waypoints  执行这里即向command_queue中添加了新命令，用来控制机械臂实际运动
-        for i in range(len(new_actions_0)):
+        for i in range(len(new_actions)):
             self.robots[0].schedule_waypoint(
-                pose=new_actions_0[i],
+                pose=new_actions[i][:6],
+                gripper_closed=new_actions[i][6],
                 target_time=new_timestamps[i]
             )
             self.robots[1].schedule_waypoint(
-                pose=new_actions_1[i], 
+                pose=new_actions[i][7:13], 
+                gripper_closed=new_actions[i][13],
                 target_time=new_timestamps[i]
             )
         
