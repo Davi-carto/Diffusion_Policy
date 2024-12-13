@@ -62,8 +62,8 @@ class VuerTeleop(mp.Process):
             'head_rmat': np.eye(3, dtype=np.float32),
             'left_pose': np.zeros(7, dtype=np.float32),
             'right_pose': np.zeros(7, dtype=np.float32),
-            # 'left_qpos': np.zeros(12, dtype=np.float32),
-            # 'right_qpos': np.zeros(12, dtype=np.float32),
+            'left_gripper_position': np.zeros(1, dtype=np.float32),
+            'right_gripper_position': np.zeros(1, dtype=np.float32),
             'receive_timestamp': time.time()
         }
         self.ring_buffer = SharedMemoryRingBuffer.create_from_examples(shm_manager, example, get_max_k, get_time_budget=0.2,
@@ -122,16 +122,27 @@ class VuerTeleop(mp.Process):
             right_pose = np.concatenate([right_wrist_mat[:3, 3],
                                          R.from_matrix(right_wrist_mat[:3, :3]).as_quat()])
             
-            # 注释掉重定向左右手的关节角度
-            # left_qpos = self.left_retargeting.retarget(left_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-            # right_qpos = self.right_retargeting.retarget(right_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+            # 计算拇指指尖和食指指尖的距离
+            # 获取左手拇指和食指指尖的索引
+            left_thumb_tip = left_fingers_mat[4]  # 拇指指尖索引为4
+            left_index_tip = left_fingers_mat[8]  # 食指指尖索引为8
+            
+            # 获取右手拇指和食指指尖的索引  
+            right_thumb_tip = right_fingers_mat[4]
+            right_index_tip = right_fingers_mat[8]
+            
+            # 计算左右手拇指和食指指尖的欧氏距离
+            left_pinch_dist = np.linalg.norm(left_thumb_tip - left_index_tip)
+            right_pinch_dist = np.linalg.norm(right_thumb_tip - right_index_tip)
+            
+
 
             self.ring_buffer.put({
                 'head_rmat': head_rmat.astype(np.float32),
                 'left_pose': left_pose.astype(np.float32),
                 'right_pose': right_pose.astype(np.float32),
-                # 'left_qpos': left_qpos.astype(np.float32),
-                # 'right_qpos': right_qpos.astype(np.float32),
+                'left_gripper_position': left_pinch_dist.astype(np.float32),
+                'right_gripper_position': right_pinch_dist.astype(np.float32),
                 'receive_timestamp': time.time()
             })
             # print("VR is running")
