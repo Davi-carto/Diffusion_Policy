@@ -1,6 +1,3 @@
-import sys
-sys.path.append('/home/rzx/RDT/DiffusionPolicy/diffusion_policy')
-
 from typing import Sequence, Tuple, Dict, Optional, Union
 import os
 import pathlib
