@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/home/rzx/RDT/DiffusionPolicy/diffusion_policy')
+
 from typing import Sequence, Tuple, Dict, Optional, Union
 import os
 import pathlib
@@ -112,8 +115,10 @@ def real_data_to_replay_buffer(
     timestamps = in_replay_buffer['timestamp'][:]
     dt = timestamps[1] - timestamps[0]
 
+    # 使用 tqdm 创建进度条，显示图像数据加载进度
     with tqdm(total=n_steps*n_cameras, desc="Loading image data", mininterval=1.0) as pbar:
         # one chunk per thread, therefore no synchronization needed
+        # 创建线程池，用于并行处理视频，提高处理速度
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_encoding_threads) as executor:
             futures = set()
             for episode_idx, episode_length in enumerate(episode_lengths):
@@ -121,6 +126,7 @@ def real_data_to_replay_buffer(
                 episode_start = episode_starts[episode_idx]
 
                 episode_video_paths = sorted(episode_video_dir.glob('*.mp4'), key=lambda x: int(x.stem))
+                #文件名是整数，所以按整数排序
                 this_camera_idxs = set(int(x.stem) for x in episode_video_paths)
                 if image_keys is None:
                     for i in this_camera_idxs - camera_idxs:
@@ -137,7 +143,7 @@ def real_data_to_replay_buffer(
                         if camera_idx not in camera_idxs:
                             continue
 
-                    # read resolution
+                    # read resolution 读取视频的分辨率
                     with av.open(str(video_path.absolute())) as container:
                         video = container.streams.video[0]
                         vcc = video.codec_context
