@@ -95,14 +95,17 @@ def real_data_to_replay_buffer(
     camera_idxs = set() 
     if image_keys is not None:
         n_cameras = len(image_keys)
+        # 获取 image_keys 中的相机索引，0、1、2、3
         camera_idxs = set(int(x.split('_')[-1]) for x in image_keys)
     else:
         # estimate number of cameras
+        # 从视频文件中提取相机索引，0、1、2、3 ***
         episode_video_dir = in_video_dir.joinpath(str(0))
         episode_video_paths = sorted(episode_video_dir.glob('*.mp4'), key=lambda x: int(x.stem))
         camera_idxs = set(int(x.stem) for x in episode_video_paths)
         n_cameras = len(episode_video_paths)
     
+    # 从 replay_buffer 中获取 n_steps、episode_starts、episode_lengths、timestamps ，用于后续处理视频
     n_steps = in_replay_buffer.n_steps
     episode_starts = in_replay_buffer.episode_ends[:] - in_replay_buffer.episode_lengths[:]
     episode_lengths = in_replay_buffer.episode_lengths
