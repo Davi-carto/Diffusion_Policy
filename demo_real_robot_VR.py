@@ -148,7 +148,7 @@ def ur_controller(teleop_state,right_base2world=right_base2world,left_base2world
     help="UR5's IP addresses e.g. 192.168.0.204. Provide one IP for each robot.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--init_joints', '-j', is_flag=True, default=False, help="Whether to initialize robot joint configuration in the beginning.")
-@click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
+@click.option('--frequency', '-f', default=30, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
 def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, command_latency):
     ##通过循环频率和设置每个时间步（time_step）的时长
@@ -188,7 +188,7 @@ def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, c
             time.sleep(1.0)
             print('Ready!')
             ##读取机械臂最新一帧的状态（数据），作为初始状态。
-            state = env.get_robot_state()
+            state = env.get_robot_state(id=1)
             '''state中包含的数据有：
             # {
             #     'ActualTCPPose',
@@ -297,7 +297,7 @@ def main(output, robot_num, robot_ips, vis_camera_idx, init_joints, frequency, c
                 ##严格控制时间，到t_sample时刻开始读取space mouse数据
                 precise_wait(t_sample)
 
-                #调整机械臂末端位置到合适位置，转成world坐标系下
+                # #调整机械臂末端位置到合适位置，转成world坐标系下
                 # target_right_pose = pose_transform_inv(actual_pose)
                 # print("target_right_pose:",target_right_pose)
 

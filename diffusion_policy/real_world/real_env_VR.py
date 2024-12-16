@@ -273,7 +273,12 @@ class RealEnvVR:
             out=self.last_realsense_data)
         #
         # 125 hz, robot_receive_timestamp
-        last_robot_data = self.robots[0].get_all_state()
+        # last_robot_data = self.robots[0].get_all_state()
+        # 修改获取机器人状态的部分
+        last_robot_data = []
+        for robot in self.robots:
+            last_robot_data.append(robot.get_all_state())
+
         # both have more than n_obs_steps data
 
         # align camera obs timestamps
@@ -306,27 +311,34 @@ class RealEnvVR:
             camera_obs[f'camera_{camera_idx}'] = value['color'][this_idxs]
             #camera_obs={camera_0: (T_o,H,W,C),camera_1:（T_o,H,W,C),camera_2:（T_o,H,W,C)}
 
+
+        robot_obs_raw = dict()
+        robot_obs = dict()
         # align robot obs
         ##找到最接近各时间戳对应的索引位置
-        robot_timestamps = last_robot_data['robot_receive_timestamp']
-        this_timestamps = robot_timestamps
-        this_idxs = list()
-        for t in obs_align_timestamps:
-            is_before_idxs = np.nonzero(this_timestamps < t)[0]
-            this_idx = 0
-            if len(is_before_idxs) > 0:
-                this_idx = is_before_idxs[-1]
-            this_idxs.append(this_idx)
+        for i, robot_data in enumerate(last_robot_data):
+            robot_timestamps = robot_data['robot_receive_timestamp']
+            this_timestamps = robot_timestamps
+            this_idxs = list()
+            for t in obs_align_timestamps:
+                is_before_idxs = np.nonzero(this_timestamps < t)[0]
+                this_idx = 0
+                if len(is_before_idxs) > 0:
+                    this_idx = is_before_idxs[-1]
+                this_idxs.append(this_idx)
+                
+            ##将RTDE的key和自定义的observation的key进行映射
+            # 为每个机器人添加前缀以区分
+            for k, v in robot_data.items():
+                if k in self.obs_key_map:
+                    # 添加机器人编号前缀，例如 'robot_0_eef_pose'
+                    new_key = f'robot_{i}_{self.obs_key_map[k]}'
+                    robot_obs_raw[new_key] = v
 
-        ##将RTDE的key和自定义的observation的key进行映射
-        robot_obs_raw = dict()
-        for k, v in last_robot_data.items():
-            if k in self.obs_key_map:
-                robot_obs_raw[self.obs_key_map[k]] = v
         #挑选出与时间戳对应的robot_obs
-        robot_obs = dict()
         for k, v in robot_obs_raw.items():
             robot_obs[k] = v[this_idxs]
+
         #robot_obs={robot_eef_pose: (T_o,6),robot_eef_pose_vel: (T_o,6),robot_joint: (T_o,6),robot_joint_vel: (T_o,6)}
         # accumulate obsT_o
         if self.obs_accumulator is not None:
@@ -378,20 +390,20 @@ class RealEnvVR:
                 target_time=new_timestamps[i]
             )
         
-        # # record actions
-        # if self.action_accumulator is not None:
-        #     self.action_accumulator.put(
-        #         new_actions_0,
-        #         new_timestamps
-        #     )
-        # if self.stage_accumulator is not None:
-        #     self.stage_accumulator.put(
-        #         new_stages,
-        #         new_timestamps
-        #     )
+        # record actions
+        if self.action_accumulator is not None:
+            self.action_accumulator.put(
+                new_actions,
+                new_timestamps
+            )
+        if self.stage_accumulator is not None:
+            self.stage_accumulator.put(
+                new_stages,
+                new_timestamps
+            )
 
-    def get_robot_state(self):
-        return self.robots[0].get_state()
+    def get_robot_state(self,id = 0):
+        return self.robots[id].get_state()
 
        
     # recording API
@@ -475,7 +487,7 @@ class RealEnvVR:
         episode_id = self.replay_buffer.n_episodes
         this_video_dir = self.video_dir.joinpath(str(episode_id))
         if this_video_dir.exists():
-            # shutil.rmtree函数的作用是删除目录树，即连同目录��的所有文件和子目录都会被一并删除
+            # shutil.rmtree函数的作用是删除目录树，即连同目录的所有文件和子目录都会被一并删除
             shutil.rmtree(str(this_video_dir))
         print(f'Episode {episode_id} dropped!')
 
